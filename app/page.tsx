@@ -47,7 +47,7 @@ export default async function HomePage() {
   const { data: firm } = user
     ? await supabase.from('ca_firms').select('id').eq('user_id', user.id).maybeSingle()
     : { data: null }
-  const accountHref = firm ? '/dashboard' : user ? '/login?error=account-setup' : '/login'
+  const accountHref = firm ? '/dashboard' : user ? '/login?error=account-setup' : '/login?mode=signup'
 
   return (
     <div className="min-h-screen bg-white">
@@ -65,10 +65,12 @@ export default async function HomePage() {
                   className="text-sm bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
                   Dashboard
                 </Link>
-                <a href="/auth/signout"
-                  className="text-sm text-gray-700 border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors">
-                  Sign out
-                </a>
+                <form action="/auth/signout" method="POST">
+                  <button type="submit"
+                    className="text-sm text-gray-700 border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors">
+                    Sign out
+                  </button>
+                </form>
               </>
             ) : user ? (
               <>
@@ -76,18 +78,20 @@ export default async function HomePage() {
                   className="text-sm bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
                   Finish account setup
                 </Link>
-                <a href="/auth/signout"
-                  className="text-sm text-gray-700 border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors">
-                  Sign out
-                </a>
+                <form action="/auth/signout" method="POST">
+                  <button type="submit"
+                    className="text-sm text-gray-700 border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors">
+                    Sign out
+                  </button>
+                </form>
               </>
             ) : (
               <>
-                <Link href="/login"
+                <Link href="/login?mode=login"
                   className="text-sm text-gray-700 border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors">
                   Sign in
                 </Link>
-                <Link href="/login"
+                <Link href="/login?mode=signup"
                   className="text-sm bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
                   Sign up
                 </Link>
