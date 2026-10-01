@@ -1,24 +1,41 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-gray-500">Loading login form…</div>}>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams()
+  const refCode = searchParams.get('ref')
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
+  const callbackError = searchParams.get('error')
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
     const supabase = createClient()
+    const redirectUrl = new URL('/auth/callback', window.location.origin)
+    // Keep a ref parameter even when empty so the Supabase email template can
+    // append token_hash and type with a stable query-string separator.
+    redirectUrl.searchParams.set('ref', refCode?.trim().toUpperCase() ?? '')
     const { error } = await supabase.auth.signInWithOtp({
-      email,
+      email: email.trim(),
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        shouldCreateUser: true,
+        emailRedirectTo: redirectUrl.toString(),
       },
     })
     if (error) {
@@ -41,7 +58,7 @@ export default function LoginPage() {
           <h2 className="text-xl font-bold text-gray-900 mb-2">Check your email</h2>
           <p className="text-gray-500">
             We sent a magic link to <strong className="text-gray-900">{email}</strong>.
-            Click it to sign in — no password needed.
+            Click it to sign in or finish creating your account — no password needed.
           </p>
         </div>
       </div>
@@ -54,10 +71,17 @@ export default function LoginPage() {
         <Link href="/" className="text-sm text-gray-500 hover:text-gray-700 mb-6 block">
           ← Back to home
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Sign in to TaxFlow AI</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">Sign in or create your free account</h1>
         <p className="text-gray-500 mb-7 text-sm">
-          We&apos;ll email you a magic link — no password required.
+          Enter your email. If this is your first time, we&apos;ll create your account after you confirm the link.
         </p>
+        {callbackError && (
+          <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg mb-4">
+            {callbackError === 'account-setup'
+              ? 'Your email was verified, but we could not finish setting up your firm account. Check the Supabase database and server configuration, then request a new magic link.'
+              : 'This magic link is invalid, expired, or already used. Request a new magic link.'}
+          </p>
+        )}
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
