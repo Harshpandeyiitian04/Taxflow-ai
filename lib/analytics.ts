@@ -5,7 +5,9 @@ export async function trackServerEvent(
 ) {
   if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return
 
-  await fetch('https://app.posthog.com/capture/', {
+  const host = process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com'
+
+  await fetch(`${host.replace(/\/+$/, '')}/capture/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
