@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { CAFirm } from '@/types'
 
-interface Props { firm: CAFirm & { referral_code: string; referral_credits: number } }
+interface Props { firm: CAFirm & { referral_code: string } }
 
 interface ReferralRecord {
   email: string

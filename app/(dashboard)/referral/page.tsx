@@ -10,5 +10,5 @@ export default async function ReferralPage() {
   if (!user) redirect('/login')
   const firm = await getCurrentFirm()
   if (!firm) redirect('/login')
-  return <ReferralClient firm={firm as CAFirm & { referral_code: string; referral_credits: number }} />
+  return <ReferralClient firm={firm as CAFirm & { referral_code: string }} />
 }

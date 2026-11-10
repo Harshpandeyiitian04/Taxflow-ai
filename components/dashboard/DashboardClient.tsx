@@ -9,12 +9,14 @@ import type { CAFirm, Client, ClientStatus } from '@/types'
 
 
 interface ClientWithDocs extends Client {
-  documents: { id: string; type: string; extraction_status: string; extracted_data?: Record<string, unknown> | null }[]
+  documents: { id: string; type: string; extraction_status: string; created_at?: string }[]
 }
 
 interface Props {
   initialClients: ClientWithDocs[]
   firm: CAFirm
+  totalClients?: number
+  truncated?: boolean
 }
 
 const STATUS_CONFIG: Record<ClientStatus, { label: string; bg: string; text: string }> = {
@@ -27,7 +29,12 @@ const STATUS_CONFIG: Record<ClientStatus, { label: string; bg: string; text: str
 
 const STATUS_ORDER: ClientStatus[] = ['pending', 'received', 'processing', 'done', 'filed']
 
-export function DashboardClient({ initialClients, firm }: Props) {
+export function DashboardClient({
+  initialClients,
+  firm,
+  totalClients,
+  truncated = false,
+}: Props) {
   const [clients, setClients] = useState<ClientWithDocs[]>(initialClients)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all')
@@ -147,13 +154,33 @@ export function DashboardClient({ initialClients, firm }: Props) {
     setSelectedClientIds([])
   }
 
-  function exportSelectedClients() {
-    const rows = clients.flatMap(client => {
-      if (!selectedClientIds.includes(client.id)) return []
-      const doc = client.documents.find(document => document.type === 'form16' && document.extraction_status === 'completed')
-      if (!doc?.extracted_data) return []
-      return [{ name: client.name, pan: client.pan, data: doc.extracted_data }]
-    })
+  async function exportSelectedClients() {
+    const selected = clients.filter(client => selectedClientIds.includes(client.id))
+    const rows: Array<{ name: string; pan: string | null; data: Record<string, unknown> }> = []
+
+    for (const client of selected) {
+      const hasCompleted = client.documents.some(
+        document => document.type === 'form16' && document.extraction_status === 'completed'
+      )
+      if (!hasCompleted) continue
+
+      try {
+        const res = await fetch(`/api/clients/${client.id}`)
+        if (!res.ok) continue
+        const payload = await res.json()
+        const docs = (payload.client?.documents ?? []) as Array<{
+          type: string
+          extraction_status: string
+          extracted_data?: Record<string, unknown> | null
+        }>
+        const doc = docs.find(d => d.type === 'form16' && d.extraction_status === 'completed')
+        if (doc?.extracted_data) {
+          rows.push({ name: client.name, pan: client.pan, data: doc.extracted_data })
+        }
+      } catch {
+        // Skip clients that fail to load
+      }
+    }
 
     if (!rows.length) {
       alert('Selected clients have no completed Form 16 extractions to export.')
@@ -229,6 +256,11 @@ export function DashboardClient({ initialClients, firm }: Props) {
         </div>
       )}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        {truncated && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Showing the newest 500 of {totalClients ?? clients.length} clients. Refine with search or contact support for larger practices.
+          </div>
+        )}
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[

@@ -13,16 +13,17 @@ export interface CAFirm {
   owner_name: string | null
   phone: string | null
   city: string | null
-  plan: Plan
-  extractions_used: number
-  client_limit: number
-  razorpay_payment_id: string | null
-  razorpay_sub_id: string | null
-  razorpay_customer_id: string | null
-  plan_expires_at: string | null
+  /** DB column retained; not used for gating during free early access. */
+  plan?: Plan
+  extractions_used?: number
+  client_limit?: number
+  razorpay_payment_id?: string | null
+  razorpay_sub_id?: string | null
+  razorpay_customer_id?: string | null
+  plan_expires_at?: string | null
   referral_code: string
-  referred_by: string | null
-  referral_credits: number
+  referred_by?: string | null
+  referral_credits?: number
   created_at: string
   updated_at: string
 }

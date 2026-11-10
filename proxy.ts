@@ -27,8 +27,18 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const protectedPaths = ['/dashboard', '/clients', '/extract', '/upgrade']
-  const isProtected = protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))
+  const protectedPaths = [
+    '/dashboard',
+    '/extract',
+    '/bulk',
+    '/gst',
+    '/analytics',
+    '/referral',
+    '/profile',
+  ]
+  const isProtected = protectedPaths.some(path =>
+    request.nextUrl.pathname === path || request.nextUrl.pathname.startsWith(`${path}/`)
+  )
 
   if (!user && isProtected) {
     const url = request.nextUrl.clone()

@@ -6,21 +6,33 @@ import type { EmailOtpType } from '@supabase/supabase-js'
 import { sendWelcomeEmail } from '@/lib/email'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+/** Same-origin relative redirects only; reject open-redirect tricks. */
+export function sanitizeNextPath(requestedNext: string, origin: string): string {
+  const fallback = '/dashboard'
+  if (!requestedNext.startsWith('/') || requestedNext.startsWith('//')) return fallback
+  if (
+    requestedNext.includes('\\') ||
+    /%2f/i.test(requestedNext) ||
+    /%5c/i.test(requestedNext)
+  ) {
+    return fallback
+  }
+  try {
+    const nextUrl = new URL(requestedNext, origin)
+    if (nextUrl.origin !== origin) return fallback
+    return `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`
+  } catch {
+    return fallback
+  }
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   const tokenHash = searchParams.get('token_hash')
   const otpType = searchParams.get('type') as EmailOtpType | null
   const requestedNext = searchParams.get('next') ?? '/dashboard'
-  let next = '/dashboard'
-  try {
-    const nextUrl = new URL(requestedNext, origin)
-    if (nextUrl.origin === origin) {
-      next = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`
-    }
-  } catch {
-    // Ignore malformed redirect targets and send authenticated users to the dashboard.
-  }
+  const next = sanitizeNextPath(requestedNext, origin)
   const referralCode = searchParams.get('ref')?.trim().toUpperCase()
 
   if (code || (tokenHash && otpType)) {

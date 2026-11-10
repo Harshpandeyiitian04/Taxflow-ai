@@ -58,13 +58,8 @@ export function ProfileClient({ firm, userEmail }: { firm: CAFirm; userEmail: st
             <p className="font-medium text-gray-900">{userEmail}</p>
             <div className="mt-2 flex items-center gap-2">
               <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">
-                Free access · unlimited extractions
+                Free early access
               </span>
-              {firm.plan_expires_at && firm.plan !== 'trial' && (
-                <span className="text-xs text-gray-400">
-                  Expires {new Date(firm.plan_expires_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}
-                </span>
-              )}
             </div>
           </div>
 

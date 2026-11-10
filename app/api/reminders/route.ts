@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getCurrentFirm, getOrCreateUploadToken } from '@/lib/supabase/queries'
+import { requireFirm } from '@/lib/auth/requireFirm'
+import { getOrCreateUploadToken } from '@/lib/supabase/queries'
 
 interface ScheduledReminder {
   type: string
@@ -9,21 +10,16 @@ interface ScheduledReminder {
   scheduled_at: string
 }
 
-// POST /api/reminders — schedule reminder sequence for a client
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const firm = await getCurrentFirm()
-  if (!firm) return NextResponse.json({ error: 'Firm not found' }, { status: 404 })
+  const auth = await requireFirm()
+  if (!auth.ok) return auth.response
+  const { firm } = auth
 
   const { clientId, sequence } = await request.json()
   if (!['document_request', 'gst_gstr1', 'gst_gstr3b'].includes(sequence)) {
     return NextResponse.json({ error: 'Invalid reminder sequence' }, { status: 400 })
   }
 
-  // Fetch client
   const admin = createAdminClient()
   const { data: client } = await admin
     .from('clients')
@@ -48,7 +44,6 @@ export async function POST(request: NextRequest) {
     if (!token) return NextResponse.json({ error: 'Could not create an upload link' }, { status: 500 })
     const uploadUrl = `${process.env.NEXT_PUBLIC_APP_URL}/upload/${token}`
 
-    // 3-message sequence: Day 1, Day 4, Day 8
     remindersToCreate.push(
       {
         type: sequence,
@@ -104,7 +99,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'This reminder sequence is already scheduled' }, { status: 409 })
   }
 
-  // Insert all reminders
   const { error } = await admin
     .from('reminders')
     .insert(remindersToCreate.map(r => ({
@@ -118,16 +112,13 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ scheduled: remindersToCreate.length })
 }
 
-// GET /api/reminders?clientId=xxx — get reminders for a client
 export async function GET(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const firm = await getCurrentFirm()
-  if (!firm) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const auth = await requireFirm()
+  if (!auth.ok) return auth.response
+  const { firm } = auth
 
   const clientId = request.nextUrl.searchParams.get('clientId')
+  const supabase = await createClient()
 
   const query = supabase
     .from('reminders')

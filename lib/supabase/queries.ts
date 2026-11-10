@@ -3,6 +3,9 @@ import { createClient } from './server'
 import { createAdminClient } from './admin'
 import type { CAFirm, Client, Document } from '@/types'
 
+const FIRM_SELECT =
+  'id, user_id, email, firm_name, owner_name, phone, city, referral_code, created_at, updated_at'
+
 // ─── Firm helpers ────────────────────────────────────────────
 
 export async function getCurrentFirm(): Promise<CAFirm | null> {
@@ -12,7 +15,7 @@ export async function getCurrentFirm(): Promise<CAFirm | null> {
 
   const { data, error } = await supabase
     .from('ca_firms')
-    .select('*')
+    .select(FIRM_SELECT)
     .eq('user_id', user.id)
     .single()
 
@@ -40,23 +43,7 @@ export async function updateFirm(
   return true
 }
 
-// ─── Trial / extraction limits ───────────────────────────────
-
-export async function canExtract(
-  firmId: string
-): Promise<{ allowed: boolean; remaining: number | null }> {
-  const supabase = await createClient()
-  const { data: firm } = await supabase
-    .from('ca_firms')
-    .select('id')
-    .eq('id', firmId)
-    .single()
-
-  if (!firm) return { allowed: false, remaining: 0 }
-  return { allowed: true, remaining: null }
-}
-
-// Uses admin client to bypass RLS — call from API routes only
+/** Stats-only counter. Prefer SQL expression update (Batch 2 RPC); no gating. */
 export async function incrementExtractionCount(firmId: string): Promise<void> {
   const admin = createAdminClient()
   const { data: firm } = await admin
@@ -82,6 +69,7 @@ export async function getClients(firmId: string): Promise<Client[]> {
     .select('*')
     .eq('ca_firm_id', firmId)
     .order('created_at', { ascending: false })
+    .range(0, 499)
 
   if (error) {
     console.error('getClients error:', error.message)
@@ -90,52 +78,23 @@ export async function getClients(firmId: string): Promise<Client[]> {
   return (data ?? []) as Client[]
 }
 
-export async function createClient_(
-  firmId: string,
-  payload: Pick<Client, 'name' | 'pan' | 'phone' | 'email' | 'assessment_year'>
-): Promise<Client | null> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('clients')
-    .insert({ ...payload, ca_firm_id: firmId })
-    .select()
-    .single()
-
-  if (error) {
-    console.error('createClient error:', error.message)
-    return null
-  }
-  return data as Client
-}
-
-export async function updateClientStatus(
+export async function getClientDocuments(
   clientId: string,
-  status: Client['status']
-): Promise<boolean> {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from('clients')
-    .update({ status })
-    .eq('id', clientId)
-
-  return !error
-}
-
-// ─── Document helpers ────────────────────────────────────────
-
-export async function getClientDocuments(clientId: string): Promise<Document[]> {
+  firmId: string
+): Promise<Document[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('documents')
     .select('*')
     .eq('client_id', clientId)
+    .eq('ca_firm_id', firmId)
     .order('created_at', { ascending: false })
 
   if (error) return []
   return (data ?? []) as Document[]
 }
 
-// ─── Upload token helpers (admin — use in API routes) ────────
+// ─── Upload token helpers (admin — use in API routes after ownership checks) ─
 
 export async function validateUploadToken(token: string): Promise<{
   valid: boolean
@@ -155,52 +114,33 @@ export async function validateUploadToken(token: string): Promise<{
 
   return { valid: true, clientId: data.client_id, caFirmId: data.ca_firm_id }
 }
-// Add these two functions to the BOTTOM of lib/supabase/queries.ts
 
-// Get a single client with all their documents
-export async function getClientWithDocuments(clientId: string) {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('clients')
-    .select(`
-      *,
-      documents (
-        id, type, original_filename, extraction_status,
-        extracted_data, extraction_error, file_size_bytes,
-        created_at
-      )
-    `)
-    .eq('id', clientId)
-    .single()
-
-  if (error) return null
-  return data
-}
-
-// Get the active upload token for a client (or create a new one)
 export async function getOrCreateUploadToken(
   clientId: string,
   caFirmId: string
 ): Promise<string | null> {
   const admin = createAdminClient()
 
-  // Check for existing valid token
   const { data: existing } = await admin
     .from('upload_tokens')
     .select('token, expires_at')
     .eq('client_id', clientId)
+    .eq('ca_firm_id', caFirmId)
     .eq('used', false)
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   if (existing) return existing.token
 
-  // Create fresh token
   const { data: newToken } = await admin
     .from('upload_tokens')
-    .insert({ client_id: clientId, ca_firm_id: caFirmId, token: randomBytes(32).toString('hex') })
+    .insert({
+      client_id: clientId,
+      ca_firm_id: caFirmId,
+      token: randomBytes(32).toString('hex'),
+    })
     .select('token')
     .single()
 

@@ -5,9 +5,9 @@ import { BANK_STATEMENT_SYSTEM_PROMPT, BANK_STATEMENT_USER_PROMPT } from '@/lib/
 import { AIS_SYSTEM_PROMPT, AIS_USER_PROMPT } from '@/lib/prompts/ais'
 import { FORM16A_SYSTEM_PROMPT, FORM16A_USER_PROMPT } from '@/lib/prompts/form16a'
 import { CAPITAL_GAINS_SYSTEM_PROMPT, CAPITAL_GAINS_USER_PROMPT } from '@/lib/prompts/capital-gains'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getCurrentFirm, incrementExtractionCount } from '@/lib/supabase/queries'
+import { requireFirm } from '@/lib/auth/requireFirm'
+import { incrementExtractionCount } from '@/lib/supabase/queries'
 import { trackServerEvent } from '@/lib/analytics'
 import { isPDFPasswordProtected } from '@/lib/utils/pdf-utils'
 
@@ -24,20 +24,11 @@ const EXTRACTION_PROMPTS: Record<string, { system: string; user: string }> = {
 
 export async function POST(request: NextRequest) {
   try {
-    // ── 1. Auth ──────────────────────────────────────────────
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireFirm()
+    if (!auth.ok) return auth.response
+    const { user, firm } = auth
 
-    // ── 2. Get firm ───────────────────────────────────────────
-    const firm = await getCurrentFirm()
-    if (!firm) {
-      return NextResponse.json({ error: 'Firm not found' }, { status: 404 })
-    }
-
-    // ── 4. Parse form data ────────────────────────────────────
+    // ── Parse form data ────────────────────────────────────
     let formData: FormData
     try {
       formData = await request.formData()
@@ -206,7 +197,6 @@ export async function POST(request: NextRequest) {
     // ── 10. Increment extraction count ────────────────────────
     await incrementExtractionCount(firm.id)
     await trackServerEvent(user.id, 'extraction_completed', {
-      plan: firm.plan,
       remaining: null,
       document_type: docType,
       confidence: getExtractionConfidence(extractedData),

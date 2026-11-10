@@ -1,29 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentFirm } from '@/lib/supabase/queries'
+import { requireFirm } from '@/lib/auth/requireFirm'
 
 export async function GET() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const firm = await getCurrentFirm()
-  if (!firm) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-
-  return NextResponse.json({ firm })
+  const auth = await requireFirm()
+  if (!auth.ok) return auth.response
+  return NextResponse.json({ firm: auth.firm })
 }
 
 export async function PATCH(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const firm = await getCurrentFirm()
-  if (!firm) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const auth = await requireFirm()
+  if (!auth.ok) return auth.response
+  const { firm } = auth
 
   const body = await request.json()
   const { firm_name, owner_name, phone, city } = body
 
+  const supabase = await createClient()
   const { data, error } = await supabase
     .from('ca_firms')
     .update({
@@ -33,7 +26,7 @@ export async function PATCH(request: NextRequest) {
       city: city?.trim() || null,
     })
     .eq('id', firm.id)
-    .select()
+    .select('id, user_id, email, firm_name, owner_name, phone, city, referral_code, created_at, updated_at')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -1,21 +1,17 @@
 import { randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getCurrentFirm } from '@/lib/supabase/queries'
+import { requireFirm } from '@/lib/auth/requireFirm'
 
 // POST /api/clients/[id]/token — regenerate upload token for existing client
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const firm = await getCurrentFirm()
-  if (!firm) return NextResponse.json({ error: 'Firm not found' }, { status: 404 })
+  const auth = await requireFirm()
+  if (!auth.ok) return auth.response
+  const { firm } = auth
 
   const admin = createAdminClient()
   const { data: client } = await admin
@@ -27,7 +23,6 @@ export async function POST(
 
   if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
-  // Delete any existing active tokens for this client
   await admin
     .from('upload_tokens')
     .delete()
@@ -35,7 +30,6 @@ export async function POST(
     .eq('ca_firm_id', firm.id)
     .eq('used', false)
 
-  // Create a fresh token (expires in 30 days)
   const { data: tokenRow, error } = await admin
     .from('upload_tokens')
     .insert({ client_id: id, ca_firm_id: firm.id, token: randomBytes(32).toString('hex') })
