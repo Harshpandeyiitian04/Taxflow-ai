@@ -47,6 +47,8 @@ Copy `.env.example` to `.env.local` and fill in:
 
 For deployment, configure these in the hosting provider and set `NEXT_PUBLIC_APP_URL` to the deployed HTTPS origin. Do not configure Razorpay keys; payments are disabled.
 
+Security headers (HSTS, nosniff, frame deny, referrer, permissions) are set in `next.config.ts`. A `Content-Security-Policy-Report-Only` header is also enabled — review browser reports, then switch it to enforcing CSP after testing.
+
 ## Run and verify
 
 ```bash

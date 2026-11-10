@@ -23,7 +23,7 @@ const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'support@
 const FAQ = [
   {
     q: 'Is my client data safe?',
-    a: 'Documents are stored in the private storage bucket configured in your Supabase project. Access is restricted to the CA firm that owns the client record.',
+    a: 'Documents are stored privately in your Supabase project and shared only with the CA firm that owns the client. Files are processed by Google Gemini to extract data. See our draft Privacy notice for processors and retention.',
   },
   {
     q: 'Which software does the CSV export work with?',
@@ -273,7 +273,9 @@ per Form 16` },
       <footer className="border-t border-gray-100 px-6 py-8">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="font-bold text-gray-900">TaxFlow AI</span>
-          <div className="flex gap-6 text-sm text-gray-400">
+          <div className="flex flex-wrap gap-6 text-sm text-gray-400 justify-center">
+            <Link href="/privacy" className="hover:text-gray-600">Privacy (draft)</Link>
+            <Link href="/terms" className="hover:text-gray-600">Terms (draft)</Link>
             <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-gray-600">{SUPPORT_EMAIL}</a>
             <span>Built for Indian CA firms</span>
           </div>
