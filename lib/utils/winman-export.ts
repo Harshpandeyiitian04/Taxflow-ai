@@ -165,14 +165,13 @@ function buildWinmanRow(
   return csvSafeRow(cells)
 }
 
-/** Download single client in Winman format */
-export function downloadWinmanCSV(
+/** Pure CSV body (no BOM) for tests and downloads. */
+export function buildWinmanCsvContent(
   clientName: string,
   pan: string | null,
   data: Record<string, unknown>
-): void {
-  const bom = '\uFEFF'
-  const content = [
+): string {
+  return [
     '# TaxFlow AI — Winman CA-ERP Import Format',
     '# Verify DateOfBirth, Category, ResidentialStatus, and TaxRegime before importing',
     '# Category / ResidentialStatus / TaxRegime left blank unless extracted — fill before import',
@@ -181,6 +180,16 @@ export function downloadWinmanCSV(
     csvSafeRow(WINMAN_HEADERS),
     buildWinmanRow(clientName, pan, data),
   ].join('\n')
+}
+
+/** Download single client in Winman format */
+export function downloadWinmanCSV(
+  clientName: string,
+  pan: string | null,
+  data: Record<string, unknown>
+): void {
+  const bom = '\uFEFF'
+  const content = buildWinmanCsvContent(clientName, pan, data)
 
   const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)

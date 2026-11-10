@@ -1,0 +1,87 @@
+{
+  "employer": {
+    "name": "Acme India Pvt Ltd",
+    "pan": "AAAAA0000A",
+    "tan": "AAAA00000A",
+    "address": "Mumbai"
+  },
+  "employee": {
+    "name": "Ramesh Gupta",
+    "pan": "ABCDE1234F",
+    "designation": "Engineer",
+    "employee_id": "E1"
+  },
+  "period": {
+    "assessment_year": "2026-27",
+    "financial_year": "2025-26",
+    "from_date": "2025-04-01",
+    "to_date": "2026-03-31"
+  },
+  "income": {
+    "gross_salary": 1200000,
+    "salary_17_1": 1200000,
+    "perquisites_17_2": null,
+    "profits_in_lieu_17_3": null,
+    "hra_received": 200000,
+    "hra_exempt_10_13a": 100000,
+    "lta_exempt_10_5": null,
+    "other_exemptions_10": null,
+    "total_exempt_allowances": 100000,
+    "net_salary_after_exemptions": 1100000,
+    "standard_deduction_16_ia": 75000,
+    "professional_tax_16_iii": 2500,
+    "entertainment_allowance_16_ii": null,
+    "total_deductions_under_16": 77500,
+    "income_from_salary": 1022500,
+    "income_from_house_property": null,
+    "income_from_other_sources": null,
+    "gross_total_income": 1022500
+  },
+  "deductions_vi_a": {
+    "80c": 150000,
+    "80ccc": null,
+    "80ccd_1": null,
+    "80ccd_1b_nps": 50000,
+    "80ccd_2_employer_nps": null,
+    "80d_mediclaim": 25000,
+    "80dd": null,
+    "80ddb": null,
+    "80e_education_loan": null,
+    "80ee": null,
+    "80g_donations": null,
+    "80gg_rent": null,
+    "80tta_savings_interest": null,
+    "80ttb": null,
+    "80u": null,
+    "other_deductions": null,
+    "total_chapter_vi_a": 225000
+  },
+  "tax_computation": {
+    "total_income_after_deductions": 797500,
+    "tax_on_total_income": 50000,
+    "surcharge": null,
+    "health_education_cess": 2000,
+    "gross_tax_liability": 52000,
+    "relief_under_89": null,
+    "net_tax_payable": 52000,
+    "interest_payable_234b": null,
+    "interest_payable_234c": null,
+    "total_tax_and_interest": 52000
+  },
+  "tds": {
+    "total_tds_deducted": 60000,
+    "total_tds_deposited": 60000,
+    "q1_tds_deducted": 15000,
+    "q2_tds_deducted": 15000,
+    "q3_tds_deducted": 15000,
+    "q4_tds_deducted": 15000,
+    "tds_deposited_challan_count": null
+  },
+  "meta": {
+    "extraction_confidence": "high",
+    "has_part_a": true,
+    "has_part_b": true,
+    "document_type": "form16_complete",
+    "warnings": []
+  }
+}

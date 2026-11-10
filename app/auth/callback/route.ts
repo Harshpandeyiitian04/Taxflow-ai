@@ -5,26 +5,9 @@ import type { NextRequest } from 'next/server'
 import type { EmailOtpType } from '@supabase/supabase-js'
 import { sendWelcomeEmail } from '@/lib/email'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sanitizeNextPath } from '@/lib/auth/sanitizeNextPath'
 
-/** Same-origin relative redirects only; reject open-redirect tricks. */
-export function sanitizeNextPath(requestedNext: string, origin: string): string {
-  const fallback = '/dashboard'
-  if (!requestedNext.startsWith('/') || requestedNext.startsWith('//')) return fallback
-  if (
-    requestedNext.includes('\\') ||
-    /%2f/i.test(requestedNext) ||
-    /%5c/i.test(requestedNext)
-  ) {
-    return fallback
-  }
-  try {
-    const nextUrl = new URL(requestedNext, origin)
-    if (nextUrl.origin !== origin) return fallback
-    return `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`
-  } catch {
-    return fallback
-  }
-}
+export { sanitizeNextPath }
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)

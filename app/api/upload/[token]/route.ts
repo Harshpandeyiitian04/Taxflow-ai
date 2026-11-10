@@ -18,6 +18,7 @@ import {
   MAX_UPLOAD_MB,
   MAX_UPLOADS_PER_TOKEN,
 } from '@/lib/constants'
+import { claimUploadSlot } from '@/lib/upload/claimSlot'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -84,26 +85,14 @@ export async function POST(
   }
 
   const admin = createAdminClient()
-  const { data: claimed, error: claimError } = await admin.rpc('claim_upload_slot', {
-    p_token: token,
-    p_max: MAX_UPLOADS_PER_TOKEN,
-  })
-
-  if (claimError) {
-    logError('claim_upload_slot_failed', { message: claimError.message })
-    return NextResponse.json({ error: 'Could not validate upload link' }, { status: 503 })
+  const claimed = await claimUploadSlot(admin, token, MAX_UPLOADS_PER_TOKEN)
+  if (!claimed.ok) {
+    if (claimed.status === 503) logError('claim_upload_slot_failed', {})
+    return NextResponse.json({ error: claimed.error }, { status: claimed.status })
   }
 
-  const slot = Array.isArray(claimed) ? claimed[0] : claimed
-  if (!slot?.client_id || !slot?.ca_firm_id) {
-    return NextResponse.json(
-      { error: 'Invalid, expired, or upload limit reached for this link' },
-      { status: 400 }
-    )
-  }
-
-  const clientId = slot.client_id as string
-  const caFirmId = slot.ca_firm_id as string
+  const clientId = claimed.slot.client_id
+  const caFirmId = claimed.slot.ca_firm_id
 
   const { data: client } = await admin
     .from('clients')

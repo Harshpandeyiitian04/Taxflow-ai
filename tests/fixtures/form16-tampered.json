@@ -1,0 +1,87 @@
+{
+  "employer": {
+    "name": "Bad Co",
+    "pan": "BADPAN",
+    "tan": "BADTAN",
+    "address": null
+  },
+  "employee": {
+    "name": "Test",
+    "pan": "ZZZZZ9999Z",
+    "designation": null,
+    "employee_id": null
+  },
+  "period": {
+    "assessment_year": "2026/27",
+    "financial_year": null,
+    "from_date": null,
+    "to_date": null
+  },
+  "income": {
+    "gross_salary": 1000000,
+    "salary_17_1": 1000000,
+    "perquisites_17_2": null,
+    "profits_in_lieu_17_3": null,
+    "hra_received": null,
+    "hra_exempt_10_13a": null,
+    "lta_exempt_10_5": null,
+    "other_exemptions_10": null,
+    "total_exempt_allowances": 0,
+    "net_salary_after_exemptions": 1000000,
+    "standard_deduction_16_ia": 50000,
+    "professional_tax_16_iii": 0,
+    "entertainment_allowance_16_ii": 0,
+    "total_deductions_under_16": 50000,
+    "income_from_salary": 800000,
+    "income_from_house_property": null,
+    "income_from_other_sources": null,
+    "gross_total_income": 800000
+  },
+  "deductions_vi_a": {
+    "80c": 100000,
+    "80ccc": null,
+    "80ccd_1": null,
+    "80ccd_1b_nps": null,
+    "80ccd_2_employer_nps": null,
+    "80d_mediclaim": 20000,
+    "80dd": null,
+    "80ddb": null,
+    "80e_education_loan": null,
+    "80ee": null,
+    "80g_donations": null,
+    "80gg_rent": null,
+    "80tta_savings_interest": null,
+    "80ttb": null,
+    "80u": null,
+    "other_deductions": null,
+    "total_chapter_vi_a": 50000
+  },
+  "tax_computation": {
+    "total_income_after_deductions": 750000,
+    "tax_on_total_income": null,
+    "surcharge": null,
+    "health_education_cess": null,
+    "gross_tax_liability": null,
+    "relief_under_89": null,
+    "net_tax_payable": null,
+    "interest_payable_234b": null,
+    "interest_payable_234c": null,
+    "total_tax_and_interest": null
+  },
+  "tds": {
+    "total_tds_deducted": 40000,
+    "total_tds_deposited": 40000,
+    "q1_tds_deducted": 10000,
+    "q2_tds_deducted": 10000,
+    "q3_tds_deducted": 10000,
+    "q4_tds_deducted": 5000,
+    "tds_deposited_challan_count": null
+  },
+  "meta": {
+    "extraction_confidence": "medium",
+    "has_part_a": true,
+    "has_part_b": true,
+    "document_type": "form16_complete",
+    "warnings": []
+  }
+}

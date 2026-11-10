@@ -1,7 +1,7 @@
-import { timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendReminderEmail } from '@/lib/email'
+import { authorizeCron } from '@/lib/auth/cronAuth'
 
 // Called by Vercel Cron once daily (Hobby plan). See vercel.json.
 export const runtime = 'nodejs'
@@ -14,30 +14,6 @@ function getRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
-}
-
-function authorizeCron(request: NextRequest): NextResponse | null {
-  const secret = process.env.CRON_SECRET
-  if (!secret) {
-    return NextResponse.json({ error: 'Cron is not configured' }, { status: 500 })
-  }
-
-  const authHeader = request.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const token = authHeader.slice('Bearer '.length)
-  const tokenBuf = Buffer.from(token)
-  const secretBuf = Buffer.from(secret)
-  if (
-    tokenBuf.length !== secretBuf.length ||
-    !timingSafeEqual(tokenBuf, secretBuf)
-  ) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  return null
 }
 
 export async function GET(request: NextRequest) {
