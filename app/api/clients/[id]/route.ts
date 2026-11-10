@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requireFirm } from '@/lib/auth/requireFirm'
 import { getOrCreateUploadToken } from '@/lib/supabase/queries'
 import { trackServerEvent } from '@/lib/analytics'
+import { logError, logWarn } from '@/lib/logger'
 
 // GET /api/clients/[id] — fetch client + documents + upload token
 export async function GET(
@@ -98,6 +100,29 @@ export async function DELETE(
   if (!auth.ok) return auth.response
   const { firm } = auth
 
+  const admin = createAdminClient()
+  const { data: docs } = await admin
+    .from('documents')
+    .select('storage_path')
+    .eq('client_id', id)
+    .eq('ca_firm_id', firm.id)
+
+  const paths = (docs ?? [])
+    .map(d => d.storage_path)
+    .filter((p): p is string => typeof p === 'string' && p.length > 0)
+
+  // Also remove any objects under the firm/client prefix
+  const { data: listed } = await admin.storage.from('documents').list(`${firm.id}/${id}`, { limit: 1000 })
+  const listedPaths = (listed ?? []).map(obj => `${firm.id}/${id}/${obj.name}`)
+  const toRemove = [...new Set([...paths, ...listedPaths])]
+
+  if (toRemove.length) {
+    const { error: storageError } = await admin.storage.from('documents').remove(toRemove)
+    if (storageError) {
+      logWarn('client_storage_cleanup_failed', { message: storageError.message, clientId: id })
+    }
+  }
+
   const supabase = await createClient()
   const { error } = await supabase
     .from('clients')
@@ -105,6 +130,9 @@ export async function DELETE(
     .eq('id', id)
     .eq('ca_firm_id', firm.id)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    logError('client_delete_failed', { message: error.message, clientId: id })
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json({ success: true })
 }

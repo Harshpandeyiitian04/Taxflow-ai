@@ -3,7 +3,15 @@
 import { Resend } from 'resend'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
-const FROM = process.env.RESEND_FROM_EMAIL ?? 'harshpandeyiitian04@gmail.com'
+const FROM = process.env.RESEND_FROM_EMAIL?.trim() || null
+
+function canSendEmail(): boolean {
+  if (!resend || !FROM) {
+    console.warn(JSON.stringify({ code: 'email_skipped_missing_from_or_key' }))
+    return false
+  }
+  return true
+}
 
 // Email sent to CA when a client uploads documents
 export async function sendClientUploadNotification({
@@ -21,7 +29,7 @@ export async function sendClientUploadNotification({
   extractionSuccess: boolean
   dashboardUrl: string
 }) {
-  if (!resend) return
+  if (!canSendEmail()) return
 
   const docLabel: Record<string, string> = {
     form16: 'Form 16',
@@ -78,19 +86,18 @@ export async function sendClientUploadNotification({
 </html>`
 
   try {
-    await resend.emails.send({ from: FROM, to: caEmail, subject, html })
-  } catch (err) {
-    console.error('Email send failed (non-fatal):', err)
-    // Never let email failure crash the upload flow
+    await resend!.emails.send({ from: FROM!, to: caEmail, subject, html })
+  } catch {
+    console.error(JSON.stringify({ code: 'email_send_failed' }))
   }
 }
 
 // Welcome email sent after first signup
 export async function sendWelcomeEmail(caEmail: string) {
-  if (!resend) return
+  if (!canSendEmail()) return
 
-  await resend.emails.send({
-    from: FROM,
+  await resend!.emails.send({
+    from: FROM!,
     to: caEmail,
     subject: 'Welcome to TaxFlow AI — your free account is ready',
     html: `
@@ -119,7 +126,7 @@ export async function sendWelcomeEmail(caEmail: string) {
   </div>
 </body>
 </html>`,
-  }).catch(err => console.error('Welcome email failed:', err))
+  }).catch(() => console.error(JSON.stringify({ code: 'welcome_email_failed' })))
 }
 
 export async function sendReminderEmail({
@@ -131,10 +138,10 @@ export async function sendReminderEmail({
   clientName: string
   message: string
 }): Promise<boolean> {
-  if (!resend) return false
+  if (!canSendEmail()) return false
 
-  const { error } = await resend.emails.send({
-    from: FROM,
+  const { error } = await resend!.emails.send({
+    from: FROM!,
     to,
     subject: 'A reminder from your tax consultant',
     text: `Hello ${clientName},\n\n${message}\n\nTaxFlow AI`,

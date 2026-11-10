@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { generateForm16CSV } from '@/lib/utils/export'
+import { MAX_UPLOAD_MB } from '@/lib/constants'
 
 interface BulkResult {
   filename: string
@@ -28,7 +29,11 @@ export function BulkExtractClient() {
     if (selected.length > 50) alert('Bulk extraction supports up to 50 files at a time.')
     const arr = Array.from(selected).slice(0, 50).filter(f =>
       ['application/pdf','image/jpeg','image/png','image/webp'].includes(f.type)
+      && f.size <= MAX_UPLOAD_MB * 1024 * 1024
     )
+    if (selected.length > 0 && arr.length < Math.min(selected.length, 50)) {
+      alert(`Some files were skipped (wrong type or over ${MAX_UPLOAD_MB} MB).`)
+    }
     setFiles(arr)
     setResults(arr.map(f => ({ filename: f.name, status: 'pending' })))
   }

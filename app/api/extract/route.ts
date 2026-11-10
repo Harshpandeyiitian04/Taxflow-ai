@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getExtractionModel } from '@/lib/gemini'
+import { getExtractionModel, isGeminiConfigured } from '@/lib/gemini'
 import { FORM16_SYSTEM_PROMPT, FORM16_USER_PROMPT } from '@/lib/prompts/form16'
 import { BANK_STATEMENT_SYSTEM_PROMPT, BANK_STATEMENT_USER_PROMPT } from '@/lib/prompts/bank-statement'
 import { AIS_SYSTEM_PROMPT, AIS_USER_PROMPT } from '@/lib/prompts/ais'
@@ -10,6 +10,15 @@ import { requireFirm } from '@/lib/auth/requireFirm'
 import { incrementExtractionCount } from '@/lib/supabase/queries'
 import { trackServerEvent } from '@/lib/analytics'
 import { isPDFPasswordProtected } from '@/lib/utils/pdf-utils'
+import { verifyMagicBytes } from '@/lib/utils/magicBytes'
+import { parseExtractionJson } from '@/lib/extraction/parseGemini'
+import { logError, logWarn } from '@/lib/logger'
+import {
+  ALLOWED_UPLOAD_MIME_TYPES,
+  FAIR_USE_DAILY_EXTRACTIONS,
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MB,
+} from '@/lib/constants'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -28,7 +37,10 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response
     const { user, firm } = auth
 
-    // ── Parse form data ────────────────────────────────────
+    if (!isGeminiConfigured()) {
+      return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
+    }
+
     let formData: FormData
     try {
       formData = await request.formData()
@@ -62,44 +74,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
     }
 
-    // ── 5. Validate file ──────────────────────────────────────
-    const ALLOWED_TYPES = [
-      'application/pdf',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-    ]
-    if (!ALLOWED_TYPES.includes(file.type)) {
+    if (!(ALLOWED_UPLOAD_MIME_TYPES as readonly string[]).includes(file.type)) {
       return NextResponse.json(
         { error: 'Only PDF and image files (JPEG, PNG, WebP) are supported.' },
         { status: 400 }
       )
     }
 
-    const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
-    if (file.size > MAX_BYTES) {
+    if (file.size > MAX_UPLOAD_BYTES) {
       return NextResponse.json(
-        { error: 'File too large. Maximum size is 10 MB.' },
+        {
+          error: `File too large. Maximum size is ${MAX_UPLOAD_MB} MB. Compress or split the PDF and try again.`,
+        },
         { status: 400 }
       )
     }
 
-    // ── 6. Convert to base64 ──────────────────────────────────
     const arrayBuffer = await file.arrayBuffer()
-    if (file.type === 'application/pdf' && await isPDFPasswordProtected(arrayBuffer)) {
+    const magic = verifyMagicBytes(arrayBuffer, file.type)
+    if (!magic.ok) {
+      return NextResponse.json({ error: magic.error }, { status: 400 })
+    }
+
+    if (magic.mime === 'application/pdf' && await isPDFPasswordProtected(arrayBuffer)) {
       return NextResponse.json(
         { error: 'This PDF is password-protected. Remove its password and upload it again.' },
         { status: 422 }
       )
     }
 
-    const base64 = Buffer.from(arrayBuffer).toString('base64')
-    const mimeType = file.type as
-      | 'application/pdf'
-      | 'image/jpeg'
-      | 'image/png'
-      | 'image/webp'
+    const admin = createAdminClient()
+    const { data: allowed, error: quotaError } = await admin.rpc('consume_extraction', {
+      p_firm: firm.id,
+      p_limit: FAIR_USE_DAILY_EXTRACTIONS,
+    })
+
+    if (quotaError) {
+      logError('quota_rpc_failed', { firmId: firm.id, message: quotaError.message })
+      return NextResponse.json({ error: 'Could not check usage limits' }, { status: 503 })
+    }
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error: `Daily fair-use limit of ${FAIR_USE_DAILY_EXTRACTIONS} extractions reached. Try again tomorrow.`,
+        },
+        { status: 429 }
+      )
+    }
 
     await trackServerEvent(user.id, 'extraction_started', {
       document_type: docType,
@@ -107,94 +128,122 @@ export async function POST(request: NextRequest) {
       file_size_bytes: file.size,
     })
 
-    // ── 7. Call Gemini ────────────────────────────────────────
-    const model = getExtractionModel()
+    const base64 = Buffer.from(arrayBuffer).toString('base64')
+    const prompts = EXTRACTION_PROMPTS[docType]
 
-    let geminiResponse
+    let documentId: string | null = null
+    let storagePath: string | null = null
+
+    if (clientId) {
+      const { data: doc, error: docInsertError } = await admin
+        .from('documents')
+        .insert({
+          client_id: clientId,
+          ca_firm_id: firm.id,
+          type: docType,
+          storage_path: null,
+          original_filename: file.name,
+          file_size_bytes: file.size,
+          extracted_data: null,
+          extraction_status: 'processing',
+        })
+        .select('id')
+        .single()
+
+      if (docInsertError || !doc) {
+        logError('document_insert_failed', { message: docInsertError?.message })
+        return NextResponse.json({ error: 'Could not create document record' }, { status: 500 })
+      }
+      documentId = doc.id
+
+      const ext = file.name.split('.').pop() ?? 'pdf'
+      storagePath = `${firm.id}/${clientId}/${docType}-${Date.now()}.${ext}`
+      const { error: storageError } = await admin.storage
+        .from('documents')
+        .upload(storagePath, arrayBuffer, { contentType: magic.mime, upsert: false })
+
+      if (storageError) {
+        logWarn('storage_upload_failed', { message: storageError.message })
+        await admin
+          .from('documents')
+          .update({
+            extraction_status: 'failed',
+            extraction_error: 'File storage failed',
+          })
+          .eq('id', documentId)
+        return NextResponse.json({ error: 'Could not store the uploaded file' }, { status: 500 })
+      }
+
+      await admin
+        .from('documents')
+        .update({ storage_path: storagePath })
+        .eq('id', documentId)
+    }
+
+    let extractedData: Record<string, unknown>
     try {
-      const prompts = EXTRACTION_PROMPTS[docType]
-      geminiResponse = await model.generateContent([
+      const model = getExtractionModel()
+      const geminiResponse = await model.generateContent([
         prompts.system,
-        { inlineData: { mimeType, data: base64 } },
+        { inlineData: { mimeType: magic.mime, data: base64 } },
         prompts.user,
       ])
+      const rawText = geminiResponse.response.text()
+      const parsed = parseExtractionJson(docType, rawText)
+      if (!parsed.ok) {
+        if (documentId) {
+          await admin
+            .from('documents')
+            .update({
+              extraction_status: 'failed',
+              extraction_error: parsed.error,
+            })
+            .eq('id', documentId)
+        }
+        return NextResponse.json({ error: parsed.error }, { status: 500 })
+      }
+      extractedData = parsed.data
     } catch (geminiError: unknown) {
-      console.error('Gemini API error:', geminiError)
+      const code = geminiError instanceof Error && geminiError.message === 'GEMINI_NOT_CONFIGURED'
+        ? 'gemini_not_configured'
+        : 'gemini_failed'
+      logError(code, {
+        message: geminiError instanceof Error ? geminiError.message : 'unknown',
+      })
+      if (documentId) {
+        await admin
+          .from('documents')
+          .update({
+            extraction_status: 'failed',
+            extraction_error: 'AI extraction failed',
+          })
+          .eq('id', documentId)
+      }
       return NextResponse.json(
         { error: 'AI extraction failed. Please try again in a moment.' },
         { status: 503 }
       )
     }
 
-    // ── 8. Parse JSON response ────────────────────────────────
-    const rawText = geminiResponse.response.text()
-    let extractedData: Record<string, unknown>
-
-    try {
-      // responseMimeType: 'application/json' should give clean JSON
-      // but we clean up just in case
-      const cleaned = rawText
-        .replace(/^```json\s*/i, '')
-        .replace(/```\s*$/, '')
-        .trim()
-      extractedData = JSON.parse(cleaned)
-    } catch {
-      console.error('JSON parse failed. Raw response:', rawText.slice(0, 500))
-      return NextResponse.json(
-        { error: 'Could not parse AI response. Try a clearer PDF scan.' },
-        { status: 500 }
-      )
-    }
-
-    // ── 9. Persist to database (optional — only if clientId given) ──
-    let documentId: string | null = null
-
-    if (clientId) {
-      const admin = createAdminClient()
-
-      // Upload file to Supabase storage
-      const ext = file.name.split('.').pop() ?? 'pdf'
-      const storagePath = `${firm.id}/${clientId}/${docType}-${Date.now()}.${ext}`
-
-      const { error: storageError } = await admin.storage
+    if (documentId) {
+      await admin
         .from('documents')
-        .upload(storagePath, arrayBuffer, {
-          contentType: file.type,
-          upsert: false,
-        })
-
-      if (storageError) {
-        console.warn('Storage upload failed (non-fatal):', storageError.message)
-      }
-
-      // Create document record
-      const { data: doc, error: docError } = await admin
-        .from('documents')
-        .insert({
-          client_id: clientId,
-          ca_firm_id: firm.id,
-          type: docType,
-          storage_path: storageError ? null : storagePath,
-          original_filename: file.name,
-          file_size_bytes: file.size,
+        .update({
           extracted_data: extractedData,
           extraction_status: 'completed',
+          extraction_error: null,
         })
-        .select('id')
-        .single()
+        .eq('id', documentId)
 
-      if (!docError && doc) {
-        documentId = doc.id
-
-        // Update client status to 'received'
+      if (clientId) {
         await admin
           .from('clients')
           .update({ status: 'received' })
           .eq('id', clientId)
+          .eq('ca_firm_id', firm.id)
       }
     }
 
-    // ── 10. Increment extraction count ────────────────────────
     await incrementExtractionCount(firm.id)
     await trackServerEvent(user.id, 'extraction_completed', {
       remaining: null,
@@ -203,7 +252,6 @@ export async function POST(request: NextRequest) {
       has_client: !!clientId,
     })
 
-    // ── 11. Return result ─────────────────────────────────────
     return NextResponse.json({
       success: true,
       data: extractedData,
@@ -211,7 +259,9 @@ export async function POST(request: NextRequest) {
       remaining: null,
     })
   } catch (error: unknown) {
-    console.error('Unhandled extraction error:', error)
+    logError('extract_unhandled', {
+      message: error instanceof Error ? error.message : 'unknown',
+    })
     return NextResponse.json(
       { error: 'An unexpected error occurred. Please try again.' },
       { status: 500 }
@@ -222,6 +272,6 @@ export async function POST(request: NextRequest) {
 function getExtractionConfidence(data: Record<string, unknown>): unknown {
   const meta = data.meta
   return meta !== null && typeof meta === 'object' && 'extraction_confidence' in meta
-    ? meta.extraction_confidence
+    ? (meta as { extraction_confidence?: unknown }).extraction_confidence
     : undefined
 }

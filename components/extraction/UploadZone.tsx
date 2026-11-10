@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { MAX_UPLOAD_MB } from '@/lib/constants'
 
 interface UploadZoneProps {
   onFileSelect: (file: File) => void
@@ -18,14 +19,13 @@ export function UploadZone({
   const inputRef = useRef<HTMLInputElement>(null)
 
   const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
-  const MAX_SIZE_MB = 10
 
   function validateFile(file: File): string | null {
     if (!ALLOWED_TYPES.includes(file.type)) {
       return 'Only PDF, JPEG, PNG, and WebP files are supported.'
     }
-    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      return `File must be under ${MAX_SIZE_MB} MB. This file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      return `File must be under ${MAX_UPLOAD_MB} MB. Compress or split the PDF. This file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`
     }
     return null
   }
@@ -100,7 +100,7 @@ export function UploadZone({
                 {isDragging ? 'Drop your document here' : 'Upload your document'}
               </p>
               <p className="text-sm text-gray-500">
-                Drag & drop or click to browse · PDF, JPEG, PNG, WebP · Max 10 MB
+                Drag & drop or click to browse · PDF, JPEG, PNG, WebP · Max {MAX_UPLOAD_MB} MB
               </p>
             </div>
             <div className="flex gap-2 flex-wrap justify-center">

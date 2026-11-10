@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireFirm } from '@/lib/auth/requireFirm'
 import { trackServerEvent } from '@/lib/analytics'
+import { MAX_CLIENTS_PER_FIRM } from '@/lib/constants'
 
 const CLIENT_LIST_SELECT =
   'id, ca_firm_id, name, pan, phone, email, assessment_year, status, tags, notes, gstin, gst_scheme, fee_amount, fee_paid, last_reminder_sent_at, reminder_count, created_at, updated_at, documents(id, type, extraction_status, created_at)'
@@ -22,6 +23,22 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient()
+
+  const { count: clientCount, error: countError } = await admin
+    .from('clients')
+    .select('id', { count: 'exact', head: true })
+    .eq('ca_firm_id', firm.id)
+
+  if (countError) {
+    console.error('Count clients error:', countError.message)
+    return NextResponse.json({ error: 'Failed to create client' }, { status: 500 })
+  }
+  if ((clientCount ?? 0) >= MAX_CLIENTS_PER_FIRM) {
+    return NextResponse.json(
+      { error: `Client limit of ${MAX_CLIENTS_PER_FIRM} reached for this firm.` },
+      { status: 429 }
+    )
+  }
 
   const { data: client, error: clientError } = await admin
     .from('clients')

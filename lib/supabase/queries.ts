@@ -43,20 +43,12 @@ export async function updateFirm(
   return true
 }
 
-/** Stats-only counter. Prefer SQL expression update (Batch 2 RPC); no gating. */
+/** Stats-only counter via atomic RPC — never used for gating. */
 export async function incrementExtractionCount(firmId: string): Promise<void> {
   const admin = createAdminClient()
-  const { data: firm } = await admin
-    .from('ca_firms')
-    .select('extractions_used')
-    .eq('id', firmId)
-    .single()
-
-  if (firm) {
-    await admin
-      .from('ca_firms')
-      .update({ extractions_used: (firm.extractions_used ?? 0) + 1 })
-      .eq('id', firmId)
+  const { error } = await admin.rpc('increment_extractions_used', { p_firm: firmId })
+  if (error) {
+    console.error('incrementExtractionCount error:', error.message)
   }
 }
 

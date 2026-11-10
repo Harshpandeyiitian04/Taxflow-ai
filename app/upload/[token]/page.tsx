@@ -2,33 +2,30 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import { MAX_UPLOAD_MB } from '@/lib/constants'
 
 type PageState = 'loading' | 'ready' | 'uploading' | 'success' | 'error'
 
-interface ClientInfo {
-  id: string
-  name: string
-  assessment_year: string | null
-  ca_firm: {
-    firm_name: string | null
-    owner_name: string | null
-    email: string
-    phone?: string | null
-  }
+interface PortalInfo {
+  firmDisplayName: string
+  caPhone: string | null
+  clientFirstName: string
+  assessmentYear: string | null
+  uploadedTypes: string[]
 }
 
 const DOC_TYPES = [
-  { value: 'form16',          label: 'Form 16 (TDS Certificate)',   required: true },
-  { value: 'bank_statement',  label: 'Bank Statement',               required: false },
-  { value: 'ais',             label: 'AIS / 26AS Statement',         required: false },
-  { value: 'form16a',         label: 'Form 16A TDS Certificate',      required: false },
-  { value: 'capital_gains',   label: 'Capital Gains Statement',      required: false },
+  { value: 'form16', label: 'Form 16 (TDS Certificate)', required: true },
+  { value: 'bank_statement', label: 'Bank Statement', required: false },
+  { value: 'ais', label: 'AIS / 26AS Statement', required: false },
+  { value: 'form16a', label: 'Form 16A TDS Certificate', required: false },
+  { value: 'capital_gains', label: 'Capital Gains Statement', required: false },
 ]
 
 export default function UploadPage() {
   const { token } = useParams<{ token: string }>()
   const [state, setState] = useState<PageState>('loading')
-  const [client, setClient] = useState<ClientInfo | null>(null)
+  const [portal, setPortal] = useState<PortalInfo | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [selectedType, setSelectedType] = useState('form16')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -41,7 +38,13 @@ export default function UploadPage() {
       .then(r => r.json())
       .then(data => {
         if (data.error) { setErrorMsg(data.error); setState('error'); return }
-        setClient(data.client)
+        setPortal({
+          firmDisplayName: data.firmDisplayName,
+          caPhone: data.caPhone ?? null,
+          clientFirstName: data.clientFirstName,
+          assessmentYear: data.assessmentYear,
+          uploadedTypes: data.uploadedTypes ?? [],
+        })
         setUploadedDocs(data.uploadedTypes ?? [])
         setState('ready')
       })
@@ -50,6 +53,10 @@ export default function UploadPage() {
 
   async function handleUpload() {
     if (!selectedFile) return
+    if (selectedFile.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      alert(`File too large. Maximum size is ${MAX_UPLOAD_MB} MB.`)
+      return
+    }
     setUploading(true)
 
     const formData = new FormData()
@@ -72,8 +79,8 @@ export default function UploadPage() {
 
   function handleDone() { setState('success') }
 
-  const firmName = client?.ca_firm?.firm_name || client?.ca_firm?.owner_name || 'Your CA'
-  const caPhoneDigits = client?.ca_firm?.phone?.replace(/\D/g, '')
+  const firmName = portal?.firmDisplayName || 'Your CA'
+  const caPhoneDigits = portal?.caPhone?.replace(/\D/g, '')
   const caWhatsAppPhone = caPhoneDigits
     ? caPhoneDigits.startsWith('91') ? caPhoneDigits : `91${caPhoneDigits}`
     : null
@@ -92,7 +99,6 @@ export default function UploadPage() {
   if (state === 'error') return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="bg-white rounded-2xl border border-gray-200 p-8 max-w-md w-full text-center">
-        <div className="text-4xl mb-4">🔗</div>
         <h1 className="text-xl font-bold text-gray-900 mb-2">Link unavailable</h1>
         <p className="text-gray-500 text-sm">{errorMsg}</p>
       </div>
@@ -102,35 +108,19 @@ export default function UploadPage() {
   if (state === 'success') return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="bg-white rounded-2xl border border-gray-200 p-10 max-w-md w-full text-center">
-        <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-5">
-          <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">All done!</h1>
         <p className="text-gray-500 mb-1">
           Your documents have been sent to <strong>{firmName}</strong>.
         </p>
         <p className="text-gray-400 text-sm">
-          You will be contacted once your ITR for {client?.assessment_year ? `AY ${client.assessment_year}` : 'the selected assessment year'} is ready.
+          You will be contacted once your ITR for {portal?.assessmentYear ? `AY ${portal.assessmentYear}` : 'the selected assessment year'} is ready.
         </p>
-        {uploadedDocs.length > 0 && (
-          <div className="mt-6 text-left bg-green-50 rounded-xl p-4">
-            <p className="text-sm font-semibold text-green-800 mb-2">Documents submitted:</p>
-            {uploadedDocs.map(t => (
-              <p key={t} className="text-sm text-green-700 flex items-center gap-1.5">
-                <span>✓</span> {DOC_TYPES.find(d => d.value === t)?.label || t}
-              </p>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 py-4">
         <div className="max-w-lg mx-auto flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
@@ -152,18 +142,16 @@ export default function UploadPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-8">
-        {/* Welcome */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
           <h1 className="text-xl font-bold text-gray-900 mb-1">
-            Hello, {client?.name.split(' ')[0]}
+            Hello, {portal?.clientFirstName}
           </h1>
           <p className="text-gray-500 text-sm">
-            {firmName} needs your documents for ITR filing ({client?.assessment_year ? `AY ${client.assessment_year}` : 'assessment year to be confirmed'}).
+            {firmName} needs your documents for ITR filing ({portal?.assessmentYear ? `AY ${portal.assessmentYear}` : 'assessment year to be confirmed'}).
             Upload each document below — it takes under 2 minutes.
           </p>
         </div>
 
-        {/* Uploaded docs */}
         {uploadedDocs.length > 0 && (
           <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-4">
             <p className="text-sm font-semibold text-green-800 mb-2">
@@ -177,15 +165,10 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Upload form */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-4">
           <h2 className="font-semibold text-gray-900 mb-4">Upload a document</h2>
-
-          {/* Document type selector */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Document type
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Document type</label>
             <div className="space-y-2">
               {DOC_TYPES.filter(d => !uploadedDocs.includes(d.value)).map(doc => (
                 <label key={doc.value}
@@ -203,18 +186,12 @@ export default function UploadPage() {
                   </div>
                 </label>
               ))}
-              {DOC_TYPES.every(d => uploadedDocs.includes(d.value)) && (
-                <p className="text-sm text-green-600 font-medium">All documents uploaded!</p>
-              )}
             </div>
           </div>
 
-          {/* File picker */}
           {!DOC_TYPES.every(d => uploadedDocs.includes(d.value)) && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select file
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Select file</label>
               <div
                 onClick={() => inputRef.current?.click()}
                 className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
@@ -227,13 +204,13 @@ export default function UploadPage() {
                 />
                 {selectedFile ? (
                   <div>
-                    <p className="text-green-700 font-medium text-sm">📄 {selectedFile.name}</p>
+                    <p className="text-green-700 font-medium text-sm">{selectedFile.name}</p>
                     <p className="text-green-600 text-xs mt-1">{(selectedFile.size/1024).toFixed(0)} KB — tap to change</p>
                   </div>
                 ) : (
                   <div>
                     <p className="text-gray-600 font-medium text-sm">Tap to select file</p>
-                    <p className="text-gray-400 text-xs mt-1">PDF, JPEG, PNG — max 10 MB</p>
+                    <p className="text-gray-400 text-xs mt-1">PDF, JPEG, PNG — max {MAX_UPLOAD_MB} MB</p>
                   </div>
                 )}
               </div>
@@ -241,19 +218,14 @@ export default function UploadPage() {
               <button
                 onClick={handleUpload}
                 disabled={!selectedFile || uploading}
-                className="w-full mt-3 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white py-3 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                className="w-full mt-3 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
               >
-                {uploading ? (
-                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading...</>
-                ) : (
-                  'Upload document'
-                )}
+                {uploading ? 'Uploading...' : 'Upload document'}
               </button>
             </div>
           )}
         </div>
 
-        {/* Done button */}
         {uploadedDocs.length > 0 && requiredDocumentsUploaded && (
           <button
             onClick={handleDone}
@@ -264,7 +236,7 @@ export default function UploadPage() {
         )}
 
         <p className="text-center text-xs text-gray-400 mt-4">
-          Your documents are encrypted and shared only with {firmName}.
+          Stored privately and shared only with {firmName}. Documents are processed by Google Gemini to extract data.
         </p>
       </div>
     </div>

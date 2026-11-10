@@ -126,3 +126,87 @@ commit;
 --
 -- 4) Confirm handle_new_user trigger exists:
 --    select tgname from pg_trigger where tgname = 'on_auth_user_created';
+
+-- ═══════════════════════════════════════════════════════════════
+-- BATCH 2: fair-use quotas + upload token slots
+-- ═══════════════════════════════════════════════════════════════
+
+begin;
+
+alter table public.upload_tokens
+  add column if not exists upload_count integer not null default 0;
+
+create table if not exists public.usage_daily (
+  firm_id uuid not null references public.ca_firms(id) on delete cascade,
+  day date not null,
+  count integer not null default 0,
+  primary key (firm_id, day)
+);
+
+alter table public.usage_daily enable row level security;
+
+create or replace function public.consume_extraction(p_firm uuid, p_limit int)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_day date := (timezone('Asia/Kolkata', now()))::date;
+  v_count integer;
+begin
+  insert into public.usage_daily (firm_id, day, count)
+  values (p_firm, v_day, 0)
+  on conflict (firm_id, day) do nothing;
+
+  update public.usage_daily
+  set count = count + 1
+  where firm_id = p_firm
+    and day = v_day
+    and count < p_limit
+  returning count into v_count;
+
+  return found;
+end;
+$$;
+
+create or replace function public.claim_upload_slot(p_token text, p_max int)
+returns table (client_id uuid, ca_firm_id uuid)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  return query
+  update public.upload_tokens as t
+  set
+    upload_count = t.upload_count + 1,
+    used = ((t.upload_count + 1) >= p_max)
+  where t.token = p_token
+    and t.expires_at > now()
+    and t.upload_count < p_max
+  returning t.client_id, t.ca_firm_id;
+end;
+$$;
+
+create or replace function public.increment_extractions_used(p_firm uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.ca_firms
+  set extractions_used = coalesce(extractions_used, 0) + 1
+  where id = p_firm;
+end;
+$$;
+
+revoke all on function public.consume_extraction(uuid, int) from public, anon, authenticated;
+revoke all on function public.claim_upload_slot(text, int) from public, anon, authenticated;
+revoke all on function public.increment_extractions_used(uuid) from public, anon, authenticated;
+grant execute on function public.consume_extraction(uuid, int) to service_role;
+grant execute on function public.claim_upload_slot(text, int) to service_role;
+grant execute on function public.increment_extractions_used(uuid) to service_role;
+
+commit;
