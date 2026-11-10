@@ -53,23 +53,30 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
   const [gstin, setGstin] = useState(client.gstin ?? '')
   const [gstScheme, setGstScheme] = useState(client.gst_scheme ?? 'monthly')
   const [savingDetails, setSavingDetails] = useState(false)
+  const [statusError, setStatusError] = useState('')
+  const [detailsError, setDetailsError] = useState('')
 
   async function saveClientFields(updates: Partial<Pick<ClientFull,
     'notes' | 'tags' | 'fee_amount' | 'fee_paid' | 'gstin' | 'gst_scheme'>>) {
     setSavingDetails(true)
-    const response = await fetch(`/api/clients/${client.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    })
-    const result = await response.json()
-    if (!response.ok) {
-      alert(result.error || 'Could not save client details')
+    setDetailsError('')
+    try {
+      const response = await fetch(`/api/clients/${client.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setDetailsError(result.error || 'Could not save client details')
+        return
+      }
+      setClient(current => ({ ...current, ...result.client }))
+    } catch {
+      setDetailsError('Network error. Please try again.')
+    } finally {
       setSavingDetails(false)
-      return
     }
-    setClient(current => ({ ...current, ...result.client }))
-    setSavingDetails(false)
   }
 
   async function saveFee() {
@@ -82,17 +89,26 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
   }
 
   async function updateStatus(newStatus: ClientStatus) {
+    if (updatingStatus) return
     setUpdatingStatus(true)
-    const res = await fetch(`/api/clients/${client.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    })
-    if (res.ok) {
-      const data = await res.json()
+    setStatusError('')
+    try {
+      const res = await fetch(`/api/clients/${client.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setStatusError(data.error || 'Could not update status')
+        return
+      }
       setClient(prev => ({ ...prev, status: data.client.status }))
+    } catch {
+      setStatusError('Network error. Please try again.')
+    } finally {
+      setUpdatingStatus(false)
     }
-    setUpdatingStatus(false)
   }
 
   const firmName = firm.firm_name || firm.owner_name || 'Your firm'
@@ -161,9 +177,11 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
                 return (
                   <div key={step} className="flex items-center flex-1">
                     <button
-                      onClick={() => updateStatus(step)}
+                      type="button"
+                      onClick={() => void updateStatus(step)}
+                      disabled={updatingStatus}
                       title={`Set to ${labels[step]}`}
-                      className={`flex flex-col items-center gap-1 group ${idx < STATUS_STEPS.length - 1 ? 'flex-1' : ''}`}
+                      className={`flex flex-col items-center gap-1 group disabled:opacity-50 disabled:cursor-not-allowed ${idx < STATUS_STEPS.length - 1 ? 'flex-1' : ''}`}
                     >
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
                         isComplete ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400 group-hover:bg-gray-300'
@@ -181,6 +199,9 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
                 )
               })}
             </div>
+            {statusError && (
+              <p className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">{statusError}</p>
+            )}
 
             <div className="mt-5 border-t border-gray-100 pt-4 flex flex-wrap items-center gap-4">
               <label className="flex items-center gap-2 text-sm text-gray-600">
@@ -196,6 +217,9 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
                 Fee collected
               </label>
               {savingDetails && <span className="text-xs text-gray-400">Saving...</span>}
+              {detailsError && (
+                <p className="w-full text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">{detailsError}</p>
+              )}
             </div>
           </div>
 
@@ -256,7 +280,7 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
           </div>
         ) : (
           <div className="space-y-3">
-            {client.documents
+            {[...client.documents]
               .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
               .map(doc => {
                 const isExpanded = expandedDoc === doc.id

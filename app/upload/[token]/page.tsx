@@ -54,10 +54,11 @@ export default function UploadPage() {
   async function handleUpload() {
     if (!selectedFile) return
     if (selectedFile.size > MAX_UPLOAD_MB * 1024 * 1024) {
-      alert(`File too large. Maximum size is ${MAX_UPLOAD_MB} MB.`)
+      setErrorMsg(`File too large. Maximum size is ${MAX_UPLOAD_MB} MB. Compress or split the PDF.`)
       return
     }
     setUploading(true)
+    setErrorMsg('')
 
     const formData = new FormData()
     formData.append('file', selectedFile)
@@ -71,7 +72,7 @@ export default function UploadPage() {
       setSelectedFile(null)
       if (inputRef.current) inputRef.current.value = ''
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Upload failed. Please try again.')
+      setErrorMsg(err instanceof Error ? err.message : 'Upload failed. Please try again.')
     } finally {
       setUploading(false)
     }
@@ -216,12 +217,17 @@ export default function UploadPage() {
               </div>
 
               <button
-                onClick={handleUpload}
+                onClick={() => void handleUpload()}
                 disabled={!selectedFile || uploading}
                 className="w-full mt-3 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
               >
                 {uploading ? 'Uploading...' : 'Upload document'}
               </button>
+              {errorMsg && (
+                <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg" role="alert">
+                  {errorMsg}
+                </p>
+              )}
             </div>
           )}
         </div>

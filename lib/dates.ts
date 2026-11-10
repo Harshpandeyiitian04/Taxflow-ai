@@ -16,13 +16,13 @@ function kolkataParts(now: Date = new Date()): { year: number; month: number; da
 
 /**
  * Default assessment year for "now" in IST.
- * During FY Y-(Y+1) (Apr Y … Mar Y+1), default AY is `(Y+1)-(Y+2)%100`.
- * Example: Nov 2026 → 2027-28; Jan 2027 → 2027-28; Apr 2027 → 2028-29.
+ * From Apr 1 Y through Mar 31 Y+1, default is `Y-(Y+1)%100`
+ * (Y = calendar year of that April 1).
+ * Example: Nov 2026 → 2026-27; Jan 2027 → 2026-27; Apr 2027 → 2027-28.
  */
 export function defaultAssessmentYear(now: Date = new Date()): string {
   const { year, month } = kolkataParts(now)
-  // Apr–Mar FY: AY start year is calendar year of FY end (Apr 2026 → AY 2027-28)
-  const ayStartYear = month >= 4 ? year + 1 : year
+  const ayStartYear = month >= 4 ? year : year - 1
   const ayEnd = String((ayStartYear + 1) % 100).padStart(2, '0')
   return `${ayStartYear}-${ayEnd}`
 }
@@ -48,7 +48,6 @@ export function itrDeadlineCopy(now: Date = new Date()): {
     year > ayStartYear ||
     (year === ayStartYear && (month > 7 || (month === 7 && day > 31)))
 
-  // Approximate days left using IST calendar parts (enough for UI copy)
   const dueUtc = Date.UTC(ayStartYear, 6, 31)
   const nowUtc = Date.UTC(year, month - 1, day)
   const daysLeft = Math.ceil((dueUtc - nowUtc) / (1000 * 60 * 60 * 24))

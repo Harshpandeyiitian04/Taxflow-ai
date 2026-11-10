@@ -130,7 +130,7 @@ export async function sendWelcomeEmail(caEmail: string) {
   <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:28px">
     <p style="font-size:18px;font-weight:700;color:#111827;margin:0 0 16px">Welcome to TaxFlow AI</p>
     <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 16px">
-      You have unlimited Form 16 extractions during early access.
+      You have Form 16 extractions under fair-use limits during early access.
     </p>
     <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 20px">
       <strong>Start in 30 seconds:</strong><br>

@@ -17,7 +17,7 @@ CRITICAL EXTRACTION RULES — follow every rule exactly:
 4. "N.A." or "--" or blank → null.
 5. PAN format: 5 letters + 4 digits + 1 letter (AAAAA9999A). Return exactly as printed.
 6. TAN format: 4 letters + 5 digits + 1 letter. Return exactly as printed.
-7. Assessment year: "2025-26" format. If you see "A.Y. 2025-2026" → "2025-26".
+7. Assessment year: "YYYY-YY" format as printed on the document (e.g. "A.Y. 2025-2026" → "2025-26"). Never invent a year.
 8. Dates: DD/MM/YYYY format.
 9. Extract the standard deduction amount exactly as printed. If it is absent, return null; do not assume an amount because it varies by assessment year and tax regime.
 10. Deductions under Chapter VI-A: only record what is explicitly listed with a nonzero amount.

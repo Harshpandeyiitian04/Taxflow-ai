@@ -4,8 +4,11 @@ import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { AddClientModal } from '@/components/clients/AddClientModal'
 import { UploadLinkModal } from '@/components/clients/UploadLinkModal'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { downloadWinmanBulkCSV } from '@/lib/utils/winman-export'
 import type { CAFirm, Client, ClientStatus } from '@/types'
+
+type StatusFilter = ClientStatus | 'all' | 'in_progress'
 
 
 interface ClientWithDocs extends Client {
@@ -37,7 +40,7 @@ export function DashboardClient({
 }: Props) {
   const [clients, setClients] = useState<ClientWithDocs[]>(initialClients)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [tagFilters, setTagFilters] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<'board' | 'list'>('list')
   const [showAdd, setShowAdd] = useState(false)
@@ -47,6 +50,9 @@ export function DashboardClient({
   const [loadingLinkId, setLoadingLinkId] = useState<string | null>(null)
   const [schedulingClientId, setSchedulingClientId] = useState<string | null>(null)
   const [scheduledReminderCount, setScheduledReminderCount] = useState<Record<string, number>>({})
+  const [bannerError, setBannerError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Stats
   const stats = useMemo(() => ({
@@ -63,7 +69,10 @@ export function DashboardClient({
         c.name.toLowerCase().includes(search.toLowerCase()) ||
         (c.pan ?? '').toLowerCase().includes(search.toLowerCase()) ||
         (c.phone ?? '').includes(search)
-      const matchStatus = statusFilter === 'all' || c.status === statusFilter
+      const matchStatus = statusFilter === 'all'
+        || (statusFilter === 'in_progress'
+          ? c.status === 'received' || c.status === 'processing'
+          : c.status === statusFilter)
       const matchTags = tagFilters.length === 0 || tagFilters.every(tag => (c.tags ?? []).includes(tag))
       return matchSearch && matchStatus && matchTags
     })
@@ -80,14 +89,32 @@ export function DashboardClient({
     setLinkModal({ name: client.name, url: uploadUrl, phone: client.phone ?? undefined })
   }
 
-  async function handleDelete(clientId: string) {
-    if (!confirm('Delete this client and all their documents?')) return
-    await fetch(`/api/clients/${clientId}`, { method: 'DELETE' })
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    const clientId = deleteTarget.id
+    const previous = clients
+    setDeleting(true)
+    setBannerError('')
     setClients(prev => prev.filter(c => c.id !== clientId))
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        setClients(previous)
+        const data = await res.json().catch(() => ({}))
+        setBannerError(data.error || 'Could not delete client. Please try again.')
+      }
+    } catch {
+      setClients(previous)
+      setBannerError('Network error while deleting client.')
+    } finally {
+      setDeleting(false)
+      setDeleteTarget(null)
+    }
   }
 
   async function scheduleReminders(clientId: string, sequence: string) {
     setSchedulingClientId(clientId)
+    setBannerError('')
     try {
       const response = await fetch('/api/reminders', {
         method: 'POST',
@@ -98,7 +125,7 @@ export function DashboardClient({
       if (!response.ok) throw new Error(data.error || 'Could not schedule reminders')
       setScheduledReminderCount(current => ({ ...current, [clientId]: data.scheduled }))
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Could not schedule reminders')
+      setBannerError(error instanceof Error ? error.message : 'Could not schedule reminders')
     } finally {
       setSchedulingClientId(null)
     }
@@ -106,6 +133,7 @@ export function DashboardClient({
 
   async function changeClientStatus(clientId: string, status: ClientStatus) {
     const previousClients = clients
+    setBannerError('')
     setClients(current => current.map(client => client.id === clientId ? { ...client, status } : client))
 
     const response = await fetch(`/api/clients/${clientId}`, {
@@ -116,7 +144,7 @@ export function DashboardClient({
 
     if (!response.ok) {
       setClients(previousClients)
-      alert('Could not update client status. Please try again.')
+      setBannerError('Could not update client status. Please try again.')
     }
   }
 
@@ -144,7 +172,7 @@ export function DashboardClient({
     ))
 
     if (updates.some(response => !response.ok)) {
-      alert('Some client statuses could not be updated. Please refresh and try again.')
+      setBannerError('Some client statuses could not be updated. Please refresh and try again.')
       return
     }
 
@@ -183,7 +211,7 @@ export function DashboardClient({
     }
 
     if (!rows.length) {
-      alert('Selected clients have no completed Form 16 extractions to export.')
+      setBannerError('Selected clients have no completed Form 16 extractions to export.')
       return
     }
     downloadWinmanBulkCSV(rows)
@@ -261,12 +289,18 @@ export function DashboardClient({
             Showing the newest 500 of {totalClients ?? clients.length} clients. Refine with search or contact support for larger practices.
           </div>
         )}
+        {bannerError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start justify-between gap-3" role="alert">
+            <span>{bannerError}</span>
+            <button type="button" onClick={() => setBannerError('')} className="text-red-500 hover:text-red-700 shrink-0" aria-label="Dismiss error">✕</button>
+          </div>
+        )}
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
             { label: 'Total clients', value: stats.total, onClick: () => setStatusFilter('all') },
             { label: 'Pending docs', value: stats.pending, onClick: () => setStatusFilter('pending') },
-            { label: 'In progress', value: stats.inProgress, onClick: () => setStatusFilter('received') },
+            { label: 'In progress', value: stats.inProgress, onClick: () => setStatusFilter('in_progress') },
             { label: 'Filed', value: stats.filed, onClick: () => setStatusFilter('filed') },
           ].map(s => (
             <button key={s.label} onClick={s.onClick}
@@ -287,10 +321,11 @@ export function DashboardClient({
               placeholder="Search by name, PAN, or phone..."
               className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as ClientStatus | 'all')}
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)}
             className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="all">All statuses</option>
             <option value="pending">Pending docs</option>
+            <option value="in_progress">In progress</option>
             <option value="received">Received</option>
             <option value="processing">Processing</option>
             <option value="done">Done</option>
@@ -468,16 +503,17 @@ export function DashboardClient({
                         disabled={loadingLinkId === client.id}
                         onClick={async () => {
                           setLoadingLinkId(client.id)
+                          setBannerError('')
                           try {
                             const res = await fetch(`/api/clients/${client.id}`)
-                            const data = await res.json()
-                            if (data.uploadUrl) {
-setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? undefined })
+                            const data = await res.json().catch(() => ({}))
+                            if (res.ok && data.uploadUrl) {
+                              setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? undefined })
                             } else {
-                              alert('Could not generate upload link. Please try again.')
+                              setBannerError('Could not generate upload link. Please try again.')
                             }
                           } catch {
-                            alert('Network error. Please try again.')
+                            setBannerError('Network error. Please try again.')
                           } finally {
                             setLoadingLinkId(null)
                           }
@@ -485,7 +521,10 @@ setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? un
                         className="text-xs text-green-600 hover:text-green-800 px-2.5 py-1.5 rounded-lg border border-green-200 hover:border-green-300 bg-green-50 transition-colors disabled:opacity-50">
                         {loadingLinkId === client.id ? '...' : 'Share link'}
                       </button>
-                      <button onClick={() => handleDelete(client.id)}
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget({ id: client.id, name: client.name })}
+                        aria-label={`Delete ${client.name}`}
                         className="text-xs text-gray-400 hover:text-red-600 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
                         ✕
                       </button>
@@ -539,6 +578,18 @@ setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? un
           onClose={() => setLinkModal(null)}
         />
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete client?"
+        message={deleteTarget
+          ? `Delete ${deleteTarget.name} and all their documents? This cannot be undone.`
+          : ''}
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => { if (!deleting) setDeleteTarget(null) }}
+      />
     </div>
   )
 }

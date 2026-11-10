@@ -124,7 +124,7 @@ export default async function HomePage() {
         <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
           <Link href={accountHref}
             className="bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-colors">
-            {firm ? 'Go to dashboard' : user ? 'Finish account setup' : 'Start free — unlimited extractions'}
+            {firm ? 'Go to dashboard' : user ? 'Finish account setup' : 'Start free — early access'}
           </Link>
           <a href={LOOM_DEMO_URL ? '#demo' : accountHref}
             className="text-gray-600 hover:text-gray-900 px-8 py-4 rounded-xl font-medium text-lg border border-gray-200 hover:bg-gray-50 transition-colors">

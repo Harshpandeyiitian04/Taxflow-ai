@@ -258,6 +258,7 @@ export function ExtractionResult({ data, filename, onReset }: ExtractionResultPr
           <Field label="Total exempt allowances" value={inc.total_exempt_allowances} />
           <Field label="Net salary after exemptions" value={inc.net_salary_after_exemptions} />
           <Field label="Standard deduction u/s 16(ia)" value={inc.standard_deduction_16_ia} />
+          <Field label="Entertainment allowance u/s 16(ii)" value={inc.entertainment_allowance_16_ii} />
           <Field label="Professional tax u/s 16(iii)" value={inc.professional_tax_16_iii} />
           <Field label="Total deductions u/s 16" value={inc.total_deductions_under_16} />
           <Field label="Income from salary (net)" value={inc.income_from_salary} />
