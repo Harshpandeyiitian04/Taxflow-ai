@@ -1,5 +1,4 @@
-// Generates a flat CSV from Form 16 extracted data
-// Format is compatible with most CA software import templates
+import { csvSafeRow } from '@/lib/utils/csvSafe'
 
 export function generateForm16CSV(data: Record<string, unknown>, filename: string): void {
   const e = (data?.employer ?? {}) as Record<string, unknown>
@@ -12,7 +11,6 @@ export function generateForm16CSV(data: Record<string, unknown>, filename: strin
   const meta = (data?.meta ?? {}) as Record<string, unknown>
 
   const rows: [string, unknown][] = [
-    // Header info
     ['Field', 'Value'],
     ['', ''],
     ['=== EMPLOYER ===', ''],
@@ -44,6 +42,7 @@ export function generateForm16CSV(data: Record<string, unknown>, filename: strin
     ['Other Exemptions u/s 10', inc.other_exemptions_10 ?? ''],
     ['Standard Deduction u/s 16(ia)', inc.standard_deduction_16_ia ?? ''],
     ['Professional Tax u/s 16(iii)', inc.professional_tax_16_iii ?? ''],
+    ['Entertainment Allowance u/s 16(ii)', inc.entertainment_allowance_16_ii ?? ''],
     ['Income from Salary (Net)', inc.income_from_salary ?? ''],
     ['Income from House Property', inc.income_from_house_property ?? ''],
     ['Income from Other Sources', inc.income_from_other_sources ?? ''],
@@ -88,14 +87,8 @@ export function generateForm16CSV(data: Record<string, unknown>, filename: strin
     ['Extracted by TaxFlow AI', 'taxflowai.in'],
   ]
 
-  const csvContent = rows
-    .map(([k, v]) => {
-      const val = v === null || v === undefined ? '' : String(v)
-      const cells = [k, val].map(cell => `"${String(cell).replace(/"/g, '""')}"`)
-      return cells.join(',')
-    })
-    .join('\n')
-
+  const bom = '\uFEFF'
+  const csvContent = bom + rows.map(([k, v]) => csvSafeRow([k, v])).join('\n')
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -127,9 +120,8 @@ export function generateExtractionCSV(data: Record<string, unknown>, filename: s
 
   visit(data, '')
 
-  const csvContent = rows
-    .map(row => row.map(value => `"${value.replace(/"/g, '""')}"`).join(','))
-    .join('\n')
+  const bom = '\uFEFF'
+  const csvContent = bom + rows.map(row => csvSafeRow(row)).join('\n')
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { itrDeadlineCopy } from '@/lib/dates'
 
 const EXTRACTED_FIELDS = [
   'Employer name, PAN, TAN',
@@ -7,7 +8,7 @@ const EXTRACTED_FIELDS = [
   'Gross salary u/s 17(1)',
   'HRA exempt u/s 10(13A)',
   'LTA exempt u/s 10(5)',
-  'Standard deduction ₹50,000',
+  'Standard deduction as printed',
   'Professional tax u/s 16(iii)',
   'All Chapter VI-A deductions',
   'Net taxable income',
@@ -17,6 +18,7 @@ const EXTRACTED_FIELDS = [
 ]
 
 const LOOM_DEMO_URL = process.env.NEXT_PUBLIC_LOOM_DEMO_URL
+const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'support@taxflowai.in'
 
 const FAQ = [
   {
@@ -25,7 +27,7 @@ const FAQ = [
   },
   {
     q: 'Which software does the CSV export work with?',
-    a: 'The exported CSV works with Winman, Computax, KDK (Zen IT), Gen IT, ClearTax, and any software that accepts Excel or CSV input. Simply copy-paste the extracted values.',
+    a: 'Exports are formatted for common CA tools (Winman, KDK/Zen IT, and generic CSV). Always verify field mapping against your firm’s import template before filing.',
   },
   {
     q: 'What if the Form 16 is a scanned copy or photo?',
@@ -37,7 +39,7 @@ const FAQ = [
   },
   {
     q: 'Is TaxFlow AI free to use?',
-    a: 'Yes. TaxFlow AI is free during early access, with no extraction limit and no payment details required.',
+    a: 'Yes. TaxFlow AI is free during early access, with fair-use extraction limits and no payment details required.',
   },
 ]
 
@@ -48,6 +50,10 @@ export default async function HomePage() {
     ? await supabase.from('ca_firms').select('id').eq('user_id', user.id).maybeSingle()
     : { data: null }
   const accountHref = firm ? '/dashboard' : user ? '/login?error=account-setup' : '/login?mode=signup'
+  const itr = itrDeadlineCopy()
+  const ctaHeadline = itr.passed
+    ? 'Filing season continues. Start saving time today.'
+    : `Original ITR due date ${itr.dueLabel}. Start saving time today.`
 
   return (
     <div className="min-h-screen bg-white">
@@ -251,10 +257,10 @@ per Form 16` },
       <section className="bg-green-600 px-6 py-16 text-center">
         <div className="max-w-2xl mx-auto">
           <h2 className="text-3xl font-bold text-white mb-4">
-            ITR deadline is July 31. Start saving time today.
+            {ctaHeadline}
           </h2>
           <p className="text-green-100 mb-8 text-lg">
-            Unlimited extractions. No payment details. Takes 2 minutes to set up.
+            Fair-use extractions. No payment details. Takes 2 minutes to set up. Confirm any deadline extensions on the IT portal.
           </p>
           <Link href={accountHref}
             className="inline-block bg-white text-green-700 hover:bg-green-50 px-10 py-4 rounded-xl font-bold text-lg transition-colors">
@@ -268,7 +274,7 @@ per Form 16` },
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="font-bold text-gray-900">TaxFlow AI</span>
           <div className="flex gap-6 text-sm text-gray-400">
-            <a href="mailto:harshpandeyiitian04@gmail.com" className="hover:text-gray-600">support@taxflowai.in</a>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-gray-600">{SUPPORT_EMAIL}</a>
             <span>Built for Indian CA firms</span>
           </div>
         </div>

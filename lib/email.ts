@@ -1,9 +1,13 @@
 // lib/email.ts — reusable email functions using Resend
 
 import { Resend } from 'resend'
+import { escapeHtml } from '@/lib/utils/escapeHtml'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 const FROM = process.env.RESEND_FROM_EMAIL?.trim() || null
+const SUPPORT =
+  process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'support@taxflowai.in'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || ''
 
 function canSendEmail(): boolean {
   if (!resend || !FROM) {
@@ -11,6 +15,16 @@ function canSendEmail(): boolean {
     return false
   }
   return true
+}
+
+function safeUrl(href: string): string {
+  try {
+    const u = new URL(href)
+    if (u.protocol === 'https:' || u.protocol === 'http:') return escapeHtml(u.toString())
+  } catch {
+    /* ignore */
+  }
+  return escapeHtml(APP_URL || '#')
 }
 
 // Email sent to CA when a client uploads documents
@@ -40,6 +54,12 @@ export async function sendClientUploadNotification({
     other: 'Document',
   }
 
+  const safeClient = escapeHtml(clientName)
+  const safeCa = escapeHtml(caName || 'CA')
+  const safeDoc = escapeHtml(docLabel[documentType] ?? documentType)
+  const safeDash = safeUrl(dashboardUrl)
+  const safeApp = safeUrl(`${APP_URL}/dashboard`)
+
   const subject = extractionSuccess
     ? `✓ ${clientName} uploaded ${docLabel[documentType] ?? documentType} — data extracted`
     : `${clientName} uploaded a document — please review`
@@ -54,10 +74,10 @@ export async function sendClientUploadNotification({
       <p style="color:#ffffff;font-size:18px;font-weight:600;margin:0">TaxFlow AI</p>
     </div>
     <div style="padding:24px">
-      <p style="font-size:15px;color:#111827;margin:0 0 16px">Hello ${caName || 'CA'},</p>
+      <p style="font-size:15px;color:#111827;margin:0 0 16px">Hello ${safeCa},</p>
       <p style="font-size:15px;color:#111827;margin:0 0 16px">
-        Your client <strong>${clientName}</strong> has uploaded their
-        <strong>${docLabel[documentType] ?? documentType}</strong>.
+        Your client <strong>${safeClient}</strong> has uploaded their
+        <strong>${safeDoc}</strong>.
       </p>
       ${extractionSuccess
         ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;margin-bottom:20px">
@@ -72,13 +92,13 @@ export async function sendClientUploadNotification({
             </p>
           </div>`
       }
-      <a href="${dashboardUrl}"
+      <a href="${safeDash}"
         style="display:inline-block;background:#16a34a;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
         View extracted data →
       </a>
       <p style="font-size:12px;color:#9ca3af;margin:20px 0 0">
         TaxFlow AI · Built for Indian CA firms<br>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="color:#9ca3af">Visit dashboard</a>
+        <a href="${safeApp}" style="color:#9ca3af">Visit dashboard</a>
       </p>
     </div>
   </div>
@@ -96,6 +116,9 @@ export async function sendClientUploadNotification({
 export async function sendWelcomeEmail(caEmail: string) {
   if (!canSendEmail()) return
 
+  const safeApp = safeUrl(`${APP_URL}/dashboard`)
+  const safeSupport = escapeHtml(SUPPORT)
+
   await resend!.emails.send({
     from: FROM!,
     to: caEmail,
@@ -105,7 +128,7 @@ export async function sendWelcomeEmail(caEmail: string) {
 <html>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9fafb;margin:0;padding:20px">
   <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:28px">
-    <p style="font-size:18px;font-weight:700;color:#111827;margin:0 0 16px">Welcome to TaxFlow AI 🎉</p>
+    <p style="font-size:18px;font-weight:700;color:#111827;margin:0 0 16px">Welcome to TaxFlow AI</p>
     <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 16px">
       You have unlimited Form 16 extractions during early access.
     </p>
@@ -116,12 +139,12 @@ export async function sendWelcomeEmail(caEmail: string) {
       3. Send it to your client on WhatsApp<br>
       4. Client uploads Form 16 → you see extracted data instantly
     </p>
-    <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard"
+    <a href="${safeApp}"
       style="display:inline-block;background:#16a34a;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
       Go to dashboard →
     </a>
     <p style="font-size:12px;color:#9ca3af;margin:20px 0 0">
-      Any questions? WhatsApp or email us at support@taxflowai.in
+      Any questions? Email us at ${safeSupport}
     </p>
   </div>
 </body>

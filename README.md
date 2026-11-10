@@ -39,7 +39,8 @@ Copy `.env.example` to `.env.local` and fill in:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `GEMINI_API_KEY`
 - `NEXT_PUBLIC_APP_URL`
-- `RESEND_API_KEY` and `RESEND_FROM_EMAIL` if email delivery is enabled
+- `RESEND_API_KEY` and `RESEND_FROM_EMAIL` if email delivery is enabled (`RESEND_FROM_EMAIL` is required — there is no hardcoded From fallback)
+- `NEXT_PUBLIC_SUPPORT_EMAIL` for the public support address shown on the landing page and welcome emails
 - `NEXT_PUBLIC_POSTHOG_KEY` if analytics is enabled
 - `NEXT_PUBLIC_LOOM_DEMO_URL` if a real Loom embed is available
 - `WATI_API_KEY`, `WATI_API_ENDPOINT`, and `CRON_SECRET` if WhatsApp reminders are enabled
@@ -66,5 +67,6 @@ npm run build
 - Password-protected PDFs are detected and rejected with instructions; automatic decryption is not implemented because `pdf-lib` does not decrypt encrypted input.
 - Extraction quality still needs validation against representative samples for every document type. Review extracted values before using them for tax filing.
 - Automatic WhatsApp reminders require a configured WATI account; without it, email reminders require a client email and Resend configuration.
-- Winman/KDK CSV output should be tested against the exact import templates used by each firm.
+- Winman/KDK CSV output should be tested against the exact import templates used by each firm. Category, residential status, and tax regime are left blank unless extracted — fill them before import.
+- Standard deduction and other amounts are exported exactly as extracted (never invented).
 - No automated test suite is currently included.

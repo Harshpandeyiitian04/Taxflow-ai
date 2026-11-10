@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { getCurrentFirm } from '@/lib/supabase/queries'
+import { defaultAssessmentYear, itrDeadlineCopy } from '@/lib/dates'
 import Link from 'next/link'
 
 export default async function AnalyticsPage() {
@@ -12,8 +13,8 @@ export default async function AnalyticsPage() {
   if (!firm) redirect('/login')
 
   const today = new Date()
-  const assessmentYearStart = today.getMonth() >= 3 ? today.getFullYear() + 1 : today.getFullYear()
-  const assessmentYear = `${assessmentYearStart}-${String((assessmentYearStart + 1) % 100).padStart(2, '0')}`
+  const assessmentYear = defaultAssessmentYear(today)
+  const itr = itrDeadlineCopy(today)
 
   // Overall stats
   const { data: stats } = await supabase
@@ -62,12 +63,8 @@ export default async function AnalyticsPage() {
     .order('updated_at', { ascending: true })
     .limit(10)
 
-  // Use the next July 31 checkpoint; actual statutory deadlines may be extended.
-  const thisYearDeadline = new Date(today.getFullYear(), 6, 31)
-  const itrDeadline = thisYearDeadline >= today
-    ? thisYearDeadline
-    : new Date(today.getFullYear() + 1, 6, 31)
-  const daysLeft = Math.ceil((itrDeadline.getTime() - today.getTime()) / (1000*60*60*24))
+  // Original July 31 checkpoint for current AY; statutory deadlines may be extended.
+  const daysLeft = itr.daysLeft
   const dailyNeeded = daysLeft > 0 && stats
     ? Math.ceil((Number(stats.total_clients) - Number(stats.filed_count)) / daysLeft)
     : 0
@@ -93,7 +90,7 @@ export default async function AnalyticsPage() {
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
         {/* ITR Deadline banner */}
-        {daysLeft > 0 && daysLeft <= 45 && (
+        {!itr.passed && daysLeft > 0 && daysLeft <= 45 && (
           <div className={`rounded-2xl px-6 py-4 flex items-center justify-between ${
             daysLeft <= 7 ? 'bg-red-50 border border-red-200'
             : daysLeft <= 21 ? 'bg-amber-50 border border-amber-200'
@@ -101,11 +98,12 @@ export default async function AnalyticsPage() {
           }`}>
             <div>
               <p className={`font-semibold text-sm ${daysLeft<=7?'text-red-800':daysLeft<=21?'text-amber-800':'text-blue-800'}`}>
-                {daysLeft <= 7 ? '🔴 ITR deadline is almost here!' : daysLeft<=21 ? '🟡 ITR deadline approaching' : '📅 ITR deadline countdown'}
+                {daysLeft <= 7 ? 'ITR deadline is almost here' : daysLeft<=21 ? 'ITR deadline approaching' : 'ITR deadline countdown'}
               </p>
               <p className={`text-xs mt-0.5 ${daysLeft<=7?'text-red-600':daysLeft<=21?'text-amber-600':'text-blue-600'}`}>
-                July 31, {itrDeadline.getFullYear()} · {daysLeft} days left · {Number(st.total_clients) - Number(st.filed_count)} clients still pending
+                Original due date {itr.dueLabel} · {daysLeft} days left · {Number(st.total_clients) - Number(st.filed_count)} clients still pending
                 {dailyNeeded > 0 && ` · File ${dailyNeeded}/day to finish on time`}
+                {' · Confirm extensions on the IT portal'}
               </p>
             </div>
             <div className={`text-2xl font-bold ${daysLeft<=7?'text-red-600':daysLeft<=21?'text-amber-600':'text-blue-600'}`}>
@@ -210,7 +208,7 @@ export default async function AnalyticsPage() {
               {staleClients.map(c => {
                 const daysStale = Math.floor((today.getTime() - new Date(c.updated_at).getTime()) / (1000*60*60*24))
                 const waMsg = encodeURIComponent(
-                  `Hello, this is a reminder regarding your ITR filing. Please upload your documents at your earliest convenience. Deadline is July 31, ${itrDeadline.getFullYear()}. Thank you.`
+                  `Hello, this is a reminder regarding your ITR filing. Please upload your documents at your earliest convenience. Original due date is ${itr.dueLabel} (confirm any extensions on the IT portal). Thank you.`
                 )
                 return (
                   <div key={c.id}

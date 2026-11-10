@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { Client } from '@/types'
+import { defaultAssessmentYear, previousAssessmentYear } from '@/lib/dates'
 
 interface AddClientModalProps {
   open: boolean
@@ -10,7 +11,10 @@ interface AddClientModalProps {
 }
 
 export function AddClientModal({ open, onClose, onCreated }: AddClientModalProps) {
-  const [form, setForm] = useState({ name: '', pan: '', phone: '', email: '', assessment_year: '2027-28' })
+  const defaultAy = defaultAssessmentYear()
+  const prevAy = previousAssessmentYear()
+  const ayOptions = Array.from(new Set([defaultAy, prevAy, '2026-27', '2025-26', '2024-25']))
+  const [form, setForm] = useState({ name: '', pan: '', phone: '', email: '', assessment_year: defaultAy })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -29,7 +33,7 @@ export function AddClientModal({ open, onClose, onCreated }: AddClientModalProps
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       onCreated(data.client, data.uploadUrl)
-      setForm({ name: '', pan: '', phone: '', email: '', assessment_year: '2027-28' })
+      setForm({ name: '', pan: '', phone: '', email: '', assessment_year: defaultAssessmentYear() })
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not create client')
     } finally {
@@ -73,10 +77,9 @@ export function AddClientModal({ open, onClose, onCreated }: AddClientModalProps
             <label className="block text-sm font-medium text-gray-700 mb-1">Assessment Year</label>
             <select value={form.assessment_year} onChange={e => setForm(f => ({...f, assessment_year: e.target.value}))}
               className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-              <option value="2027-28">AY 2027-28</option>
-              <option value="2026-27">AY 2026-27</option>
-              <option value="2025-26">AY 2025-26</option>
-              <option value="2024-25">AY 2024-25</option>
+              {ayOptions.map(ay => (
+                <option key={ay} value={ay}>AY {ay}</option>
+              ))}
             </select>
           </div>
           {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}

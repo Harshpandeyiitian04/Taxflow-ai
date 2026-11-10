@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requireFirm } from '@/lib/auth/requireFirm'
 import { trackServerEvent } from '@/lib/analytics'
 import { MAX_CLIENTS_PER_FIRM } from '@/lib/constants'
+import { defaultAssessmentYear } from '@/lib/dates'
 
 const CLIENT_LIST_SELECT =
   'id, ca_firm_id, name, pan, phone, email, assessment_year, status, tags, notes, gstin, gst_scheme, fee_amount, fee_paid, last_reminder_sent_at, reminder_count, created_at, updated_at, documents(id, type, extraction_status, created_at)'
@@ -17,6 +18,9 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json()
   const { name, pan, phone, email, assessment_year } = body
+  const ay = (typeof assessment_year === 'string' && assessment_year.trim())
+    ? assessment_year.trim()
+    : defaultAssessmentYear()
 
   if (!name?.trim()) {
     return NextResponse.json({ error: 'Client name is required' }, { status: 400 })
@@ -48,7 +52,7 @@ export async function POST(request: NextRequest) {
       pan: pan?.trim().toUpperCase() || null,
       phone: phone?.trim() || null,
       email: email?.trim() || null,
-      assessment_year: assessment_year || '2026-27',
+      assessment_year: ay,
       status: 'pending',
     })
     .select()
@@ -79,10 +83,10 @@ export async function POST(request: NextRequest) {
   await trackServerEvent(user.id, 'client_added', {
     has_pan: !!pan?.trim(),
     has_phone: !!phone?.trim(),
-    assessment_year: assessment_year || '2026-27',
+    assessment_year: ay,
   })
   await trackServerEvent(user.id, 'upload_link_created', {
-    assessment_year: assessment_year || '2026-27',
+    assessment_year: ay,
   })
 
   return NextResponse.json({
