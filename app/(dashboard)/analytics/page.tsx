@@ -1,40 +1,37 @@
-import { createClient } from '@/lib/supabase/server'
+// Server page with firm filing stats and workload insights.
 import { redirect } from 'next/navigation'
-import { getCurrentFirm } from '@/lib/supabase/queries'
+import { auth } from '@/lib/auth/server'
+import {
+  getAnalyticsStats,
+  getCurrentFirm,
+  getRecentFiledClients,
+  getStaleClients,
+} from '@/lib/db/queries'
+import { defaultAssessmentYear, itrDeadlineCopy } from '@/lib/dates'
 import Link from 'next/link'
 
+export const dynamic = 'force-dynamic'
+
+// Builds analytics charts and lists for the signed-in CA firm.
 export default async function AnalyticsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: session } = await auth.getSession()
+  const user = session?.user
   if (!user) redirect('/login')
 
-  const firm = await getCurrentFirm()
+  const firm = await getCurrentFirm(user.id)
   if (!firm) redirect('/login')
 
   const today = new Date()
-  const assessmentYearStart = today.getMonth() >= 3 ? today.getFullYear() + 1 : today.getFullYear()
-  const assessmentYear = `${assessmentYearStart}-${String((assessmentYearStart + 1) % 100).padStart(2, '0')}`
+  const assessmentYear = defaultAssessmentYear(today)
+  const itr = itrDeadlineCopy(today)
 
-  // Overall stats
-  const { data: stats } = await supabase
-    .from('ca_analytics')
-    .select('*')
-    .eq('ca_firm_id', firm.id)
-    .single()
+  const stats = await getAnalyticsStats(firm.id)
 
-  // Recent filing activity (last 14 days)
   const twoWeeksAgo = new Date(today)
   twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
 
-  const { data: recentFiled } = await supabase
-    .from('clients')
-    .select('updated_at')
-    .eq('ca_firm_id', firm.id)
-    .eq('status', 'filed')
-    .gte('updated_at', twoWeeksAgo.toISOString())
-    .order('updated_at', { ascending: false })
+  const recentFiled = await getRecentFiledClients(firm.id, twoWeeksAgo)
 
-  // Build daily filing counts for last 14 days
   const dailyCounts: Record<string, number> = {}
   for (let i = 13; i >= 0; i--) {
     const d = new Date(today)
@@ -49,25 +46,12 @@ export default async function AnalyticsPage() {
   const dailyData = Object.entries(dailyCounts)
   const maxDaily = Math.max(...dailyData.map(([, v]) => v), 1)
 
-  // Clients needing attention (pending for 7+ days)
   const sevenDaysAgo = new Date(today)
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-  const { data: staleClients } = await supabase
-    .from('clients')
-    .select('id, name, pan, status, updated_at')
-    .eq('ca_firm_id', firm.id)
-    .in('status', ['pending', 'received'])
-    .lte('updated_at', sevenDaysAgo.toISOString())
-    .order('updated_at', { ascending: true })
-    .limit(10)
+  const staleClients = await getStaleClients(firm.id, sevenDaysAgo, 10)
 
-  // Use the next July 31 checkpoint; actual statutory deadlines may be extended.
-  const thisYearDeadline = new Date(today.getFullYear(), 6, 31)
-  const itrDeadline = thisYearDeadline >= today
-    ? thisYearDeadline
-    : new Date(today.getFullYear() + 1, 6, 31)
-  const daysLeft = Math.ceil((itrDeadline.getTime() - today.getTime()) / (1000*60*60*24))
+  const daysLeft = itr.daysLeft
   const dailyNeeded = daysLeft > 0 && stats
     ? Math.ceil((Number(stats.total_clients) - Number(stats.filed_count)) / daysLeft)
     : 0
@@ -92,8 +76,7 @@ export default async function AnalyticsPage() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-        {/* ITR Deadline banner */}
-        {daysLeft > 0 && daysLeft <= 45 && (
+        {!itr.passed && daysLeft > 0 && daysLeft <= 45 && (
           <div className={`rounded-2xl px-6 py-4 flex items-center justify-between ${
             daysLeft <= 7 ? 'bg-red-50 border border-red-200'
             : daysLeft <= 21 ? 'bg-amber-50 border border-amber-200'
@@ -101,11 +84,12 @@ export default async function AnalyticsPage() {
           }`}>
             <div>
               <p className={`font-semibold text-sm ${daysLeft<=7?'text-red-800':daysLeft<=21?'text-amber-800':'text-blue-800'}`}>
-                {daysLeft <= 7 ? '🔴 ITR deadline is almost here!' : daysLeft<=21 ? '🟡 ITR deadline approaching' : '📅 ITR deadline countdown'}
+                {daysLeft <= 7 ? 'ITR deadline is almost here' : daysLeft<=21 ? 'ITR deadline approaching' : 'ITR deadline countdown'}
               </p>
               <p className={`text-xs mt-0.5 ${daysLeft<=7?'text-red-600':daysLeft<=21?'text-amber-600':'text-blue-600'}`}>
-                July 31, {itrDeadline.getFullYear()} · {daysLeft} days left · {Number(st.total_clients) - Number(st.filed_count)} clients still pending
+                Original due date {itr.dueLabel} · {daysLeft} days left · {Number(st.total_clients) - Number(st.filed_count)} clients still pending
                 {dailyNeeded > 0 && ` · File ${dailyNeeded}/day to finish on time`}
+                {' · Confirm extensions on the IT portal'}
               </p>
             </div>
             <div className={`text-2xl font-bold ${daysLeft<=7?'text-red-600':daysLeft<=21?'text-amber-600':'text-blue-600'}`}>
@@ -114,7 +98,6 @@ export default async function AnalyticsPage() {
           </div>
         )}
 
-        {/* Filing progress */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900">Filing progress</h2>
@@ -145,9 +128,7 @@ export default async function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Revenue + activity row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {/* Revenue */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <h2 className="font-bold text-gray-900 mb-4">Revenue this season</h2>
             <div className="text-3xl font-bold text-green-600 mb-1">
@@ -174,7 +155,6 @@ export default async function AnalyticsPage() {
             </p>
           </div>
 
-          {/* Daily filing chart */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <h2 className="font-bold text-gray-900 mb-4">Daily filings (last 14 days)</h2>
             <div className="flex items-end gap-1 h-24">
@@ -199,7 +179,6 @@ export default async function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Clients needing attention */}
         {staleClients && staleClients.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <h2 className="font-bold text-gray-900 mb-1">Clients needing attention</h2>
@@ -210,7 +189,7 @@ export default async function AnalyticsPage() {
               {staleClients.map(c => {
                 const daysStale = Math.floor((today.getTime() - new Date(c.updated_at).getTime()) / (1000*60*60*24))
                 const waMsg = encodeURIComponent(
-                  `Hello, this is a reminder regarding your ITR filing. Please upload your documents at your earliest convenience. Deadline is July 31, ${itrDeadline.getFullYear()}. Thank you.`
+                  `Hello, this is a reminder regarding your ITR filing. Please upload your documents at your earliest convenience. Original due date is ${itr.dueLabel} (confirm any extensions on the IT portal). Thank you.`
                 )
                 return (
                   <div key={c.id}

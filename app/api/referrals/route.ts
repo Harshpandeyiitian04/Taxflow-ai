@@ -1,38 +1,36 @@
+// API to list masked firms referred by the current CA.
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { getCurrentFirm } from '@/lib/supabase/queries'
+import { sql } from '@/lib/db/sql'
+import { requireFirm } from '@/lib/auth/requireFirm'
+import { maskEmail } from '@/lib/utils/maskEmail'
 
-// GET /api/referrals — get referral history for current CA
+// Returns referral code and privacy-safe list of referred signups.
 export async function GET() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireFirm()
+  if (!auth.ok) return auth.response
+  const { firm } = auth
 
-  const firm = await getCurrentFirm()
-  if (!firm) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-
-  const admin = createAdminClient()
-
-  // Find all firms that were referred by this firm's referral code
-  const firmFields = firm as typeof firm & { referral_code?: unknown; referralCode?: unknown }
-  const referralCode = firmFields.referral_code ?? firmFields.referralCode
-  const firmReferralCode = typeof referralCode === 'string' ? referralCode : null
-
+  const firmReferralCode = typeof firm.referral_code === 'string' ? firm.referral_code : null
   if (!firmReferralCode) {
-    return NextResponse.json({ referrals: [], code: null })
+    return NextResponse.json({ referrals: [], code: null, count: 0 })
   }
 
-  const { data: referred } = await admin
-    .from('ca_firms')
-    .select('email, created_at')
-    .eq('referred_by', firmReferralCode)
-    .order('created_at', { ascending: false })
+  const rows = await sql()`
+    select email, to_jsonb(created_at) #>> '{}' as created_at
+      from public.ca_firms
+     where referred_by = ${firmReferralCode}
+     order by created_at desc
+  `
+  const referred = rows as { email: string; created_at: string }[]
 
-  const referrals = (referred ?? []).map(r => ({
-    email: r.email,
+  const referrals = referred.map(r => ({
+    email: maskEmail(r.email),
     created_at: r.created_at,
   }))
 
-  return NextResponse.json({ referrals, code: firmReferralCode })
+  return NextResponse.json({
+    referrals,
+    code: firmReferralCode,
+    count: referrals.length,
+  })
 }

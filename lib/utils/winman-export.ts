@@ -1,39 +1,33 @@
-// lib/utils/winman-export.ts
-// Generates a CSV in Winman CA-ERP import format
-// Tested against Winman 2025 bulk import template
+import { csvSafeRow } from '@/lib/utils/csvSafe'
 
-// ── Helper ──────────────────────────────────────────────────
+// Builds CSV files that Winman and KDK tax software can import.
+
+// Formats a number as text with two decimal places for CSV cells.
 function n(val: unknown): string {
-  if (val === null || val === undefined) return ''
+  if (val === null || val === undefined || val === '') return ''
   const num = Number(val)
   return isNaN(num) ? '' : num.toFixed(2)
 }
+
+// Turns a JSON value into a plain object map when possible.
 function getRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
 }
+
+// Trims a value down to plain text for CSV cells.
 function s(val: unknown): string {
   if (val === null || val === undefined) return ''
-  return String(val).replace(/,/g, ' ').trim()
-}
-function csvRow(cells: string[]): string {
-  return cells.map(c =>
-    c.includes(',') || c.includes('"') || c.includes('\n')
-      ? `"${c.replace(/"/g, '""')}"`
-      : c
-  ).join(',')
+  return String(val).trim()
 }
 
-// ── Winman column headers ────────────────────────────────────
 const WINMAN_HEADERS = [
-  // Identity
   'PAN', 'AssesseeName', 'AssessmentYear', 'DateOfBirth',
-  'Category',            // 1=Individual, 2=HUF, 3=Firm, 4=Company
-  'ResidentialStatus',   // 1=Resident, 2=NRI, 3=Not Ordinary Resident
-  'TaxRegime',           // OLD or NEW
+  'Category',
+  'ResidentialStatus',
+  'TaxRegime',
 
-  // Salary — Schedule S
   'GrossSalary_17_1',
   'Perquisites_17_2',
   'ProfitInLieu_17_3',
@@ -47,12 +41,10 @@ const WINMAN_HEADERS = [
   'EntertainmentAllowance_16ii',
   'IncomefromSalary',
 
-  // Other heads
   'HousePropertyIncome',
   'OtherSourcesIncome',
   'GrossTotalIncome',
 
-  // Chapter VI-A Deductions
   'Sec80C',
   'Sec80CCC',
   'Sec80CCD_1',
@@ -70,7 +62,6 @@ const WINMAN_HEADERS = [
   'Sec80U',
   'TotalChapterVIA',
 
-  // Tax computation
   'NetTaxableIncome',
   'TaxOnIncome',
   'Surcharge',
@@ -82,7 +73,6 @@ const WINMAN_HEADERS = [
   'InterestU234C',
   'TotalTaxAndInterest',
 
-  // TDS
   'TDSDeducted',
   'TDSDeposited',
   'Q1_TDS',
@@ -90,12 +80,11 @@ const WINMAN_HEADERS = [
   'Q3_TDS',
   'Q4_TDS',
 
-  // Meta
   'ClientRef',
   'ExtractedBy',
 ]
 
-// ── Single client row ────────────────────────────────────────
+// Maps extracted Form 16 data into one Winman import row.
 function buildWinmanRow(
   clientName: string,
   pan: string | null,
@@ -107,126 +96,135 @@ function buildWinmanRow(
   const ded = getRecord(data.deductions_vi_a)
   const tax = getRecord(data.tax_computation)
   const tds = getRecord(data.tds)
+  const meta = getRecord(data.meta)
 
   const cells = [
-    s(pan ?? emp?.pan ?? ''),
+    s(pan ?? emp.pan ?? ''),
     s(clientName),
-    s(p?.assessment_year ?? '2027-28'),
-    '',                          // DateOfBirth — fill manually
-    '1',                         // Individual by default
-    '1',                         // Resident by default
-    'OLD',                       // Old regime — CAs verify
+    s(p.assessment_year ?? ''),
+    '',
+    '',
+    '',
+    s(meta.tax_regime ?? p.tax_regime ?? ''),
 
-    n(inc?.salary_17_1),
-    n(inc?.perquisites_17_2),
-    n(inc?.profits_in_lieu_17_3),
-    n(inc?.hra_received),
-    n(inc?.hra_exempt_10_13a),
-    n(inc?.lta_exempt_10_5),
-    n(inc?.other_exemptions_10),
-    n(inc?.total_exempt_allowances),
-    n(inc?.standard_deduction_16_ia ?? 50000),
-    n(inc?.professional_tax_16_iii),
-    n(inc?.entertainment_allowance_16_ii),
-    n(inc?.income_from_salary),
+    n(inc.salary_17_1),
+    n(inc.perquisites_17_2),
+    n(inc.profits_in_lieu_17_3),
+    n(inc.hra_received),
+    n(inc.hra_exempt_10_13a),
+    n(inc.lta_exempt_10_5),
+    n(inc.other_exemptions_10),
+    n(inc.total_exempt_allowances),
+    n(inc.standard_deduction_16_ia),
+    n(inc.professional_tax_16_iii),
+    n(inc.entertainment_allowance_16_ii),
+    n(inc.income_from_salary),
 
-    n(inc?.income_from_house_property),
-    n(inc?.income_from_other_sources),
-    n(inc?.gross_total_income),
+    n(inc.income_from_house_property),
+    n(inc.income_from_other_sources),
+    n(inc.gross_total_income),
 
-    n(ded?.['80c']),
-    n(ded?.['80ccc']),
-    n(ded?.['80ccd_1']),
-    n(ded?.['80ccd_1b_nps']),
-    n(ded?.['80ccd_2_employer_nps']),
-    n(ded?.['80d_mediclaim']),
-    n(ded?.['80dd']),
-    n(ded?.['80ddb']),
-    n(ded?.['80e_education_loan']),
-    n(ded?.['80ee']),
-    n(ded?.['80g_donations']),
-    n(ded?.['80gg_rent']),
-    n(ded?.['80tta_savings_interest']),
-    n(ded?.['80ttb']),
-    n(ded?.['80u']),
-    n(ded?.total_chapter_vi_a),
+    n(ded['80c']),
+    n(ded['80ccc']),
+    n(ded['80ccd_1']),
+    n(ded['80ccd_1b_nps']),
+    n(ded['80ccd_2_employer_nps']),
+    n(ded['80d_mediclaim']),
+    n(ded['80dd']),
+    n(ded['80ddb']),
+    n(ded['80e_education_loan']),
+    n(ded['80ee']),
+    n(ded['80g_donations']),
+    n(ded['80gg_rent']),
+    n(ded['80tta_savings_interest']),
+    n(ded['80ttb']),
+    n(ded['80u']),
+    n(ded.total_chapter_vi_a),
 
-    n(tax?.total_income_after_deductions),
-    n(tax?.tax_on_total_income),
-    n(tax?.surcharge),
-    n(tax?.health_education_cess),
-    n(tax?.gross_tax_liability),
-    n(tax?.relief_under_89),
-    n(tax?.net_tax_payable),
-    n(tax?.interest_payable_234b),
-    n(tax?.interest_payable_234c),
-    n(tax?.total_tax_and_interest),
+    n(tax.total_income_after_deductions),
+    n(tax.tax_on_total_income),
+    n(tax.surcharge),
+    n(tax.health_education_cess),
+    n(tax.gross_tax_liability),
+    n(tax.relief_under_89),
+    n(tax.net_tax_payable),
+    n(tax.interest_payable_234b),
+    n(tax.interest_payable_234c),
+    n(tax.total_tax_and_interest),
 
-    n(tds?.total_tds_deducted),
-    n(tds?.total_tds_deposited),
-    n(tds?.q1_tds_deducted),
-    n(tds?.q2_tds_deducted),
-    n(tds?.q3_tds_deducted),
-    n(tds?.q4_tds_deducted),
+    n(tds.total_tds_deducted),
+    n(tds.total_tds_deposited),
+    n(tds.q1_tds_deducted),
+    n(tds.q2_tds_deducted),
+    n(tds.q3_tds_deducted),
+    n(tds.q4_tds_deducted),
 
     s(pan ?? ''),
     'TaxFlow AI',
   ]
 
-  return csvRow(cells)
+  return csvSafeRow(cells)
 }
 
-// ── Public export functions ─────────────────────────────────
+// Returns Winman CSV text for one client without downloading.
+export function buildWinmanCsvContent(
+  clientName: string,
+  pan: string | null,
+  data: Record<string, unknown>
+): string {
+  return [
+    '# TaxFlow AI — Winman CA-ERP Import Format',
+    '# Verify DateOfBirth, Category, ResidentialStatus, and TaxRegime before importing',
+    '# Category / ResidentialStatus / TaxRegime left blank unless extracted — fill before import',
+    '# Import via: Winman → File → Import Data → ITR Data',
+    '',
+    csvSafeRow(WINMAN_HEADERS),
+    buildWinmanRow(clientName, pan, data),
+  ].join('\n')
+}
 
-/** Download single client in Winman format */
+// Downloads one client as a Winman import CSV file.
 export function downloadWinmanCSV(
   clientName: string,
   pan: string | null,
   data: Record<string, unknown>
 ): void {
-  const bom = '﻿'  // UTF-8 BOM — required for Excel to open correctly
-  const content = [
-    '# TaxFlow AI — Winman CA-ERP Import Format',
-    '# Verify DateOfBirth, Category, ResidentialStatus, and TaxRegime before importing',
-    '# Import via: Winman → File → Import Data → ITR Data',
-    '',
-    csvRow(WINMAN_HEADERS),
-    buildWinmanRow(clientName, pan, data),
-  ].join('\n')
+  const bom = '\uFEFF'
+  const content = buildWinmanCsvContent(clientName, pan, data)
 
   const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
   a.download = `${clientName.replace(/\s+/g, '_')}_winman.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
 
-/** Download all clients in one Winman bulk import CSV */
+// Downloads many clients in one Winman bulk import CSV.
 export function downloadWinmanBulkCSV(
   clients: Array<{ name: string; pan: string | null; data: Record<string, unknown> }>
 ): void {
-  const bom = '﻿'
+  const bom = '\uFEFF'
   const rows = [
     '# TaxFlow AI — Winman Bulk Import',
     '# ' + clients.length + ' clients · Generated ' + new Date().toLocaleDateString('en-IN'),
-    '# Verify DateOfBirth and TaxRegime for each client before importing',
+    '# Verify DateOfBirth, Category, ResidentialStatus, and TaxRegime for each client before importing',
     '',
-    csvRow(WINMAN_HEADERS),
+    csvSafeRow(WINMAN_HEADERS),
     ...clients.map(c => buildWinmanRow(c.name, c.pan, c.data)),
   ].join('\n')
 
   const blob = new Blob([bom + rows], { type: 'text/csv;charset=utf-8' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
   a.download = `taxflow_winman_bulk_${new Date().toISOString().split('T')[0]}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
 
-/** KDK Zen IT format (simpler flat structure) */
+// Downloads one client in KDK Zen IT’s simpler CSV layout.
 export function downloadKDKCSV(
   clientName: string,
   pan: string | null,
@@ -239,19 +237,20 @@ export function downloadKDKCSV(
   const period = getRecord(data.period)
 
   const headers = [
-    'Name','PAN','AY','GrossSalary','HRAExempt','StdDeduction','ProfTax',
-    'NetSalaryIncome','GTI','80C','80D','80CCD1B','OtherVI_A','TotalDeductions',
-    'NetTaxableIncome','TaxPayable','TDSDeducted','Refund_Payable'
+    'Name', 'PAN', 'AY', 'GrossSalary', 'HRAExempt', 'StdDeduction', 'ProfTax',
+    'NetSalaryIncome', 'GTI', '80C', '80D', '80CCD1B', 'OtherVI_A', 'TotalDeductions',
+    'NetTaxableIncome', 'TaxPayable', 'TDSDeducted', 'Refund_Payable',
   ]
 
+  // Parses a cell value as a number defaulting to zero.
   const amount = (value: unknown) => Number(value) || 0
   const refund = amount(tds.total_tds_deducted) - amount(tax.net_tax_payable)
 
   const row = [
-    s(clientName), s(pan ?? ''), s(period.assessment_year ?? '2027-28'),
+    s(clientName), s(pan ?? ''), s(period.assessment_year ?? ''),
     n(inc.gross_salary ?? inc.salary_17_1),
     n(inc.hra_exempt_10_13a),
-    n(inc.standard_deduction_16_ia ?? 50000),
+    n(inc.standard_deduction_16_ia),
     n(inc.professional_tax_16_iii),
     n(inc.income_from_salary),
     n(inc.gross_total_income),
@@ -264,12 +263,12 @@ export function downloadKDKCSV(
     refund >= 0 ? `REFUND ${n(refund)}` : `PAYABLE ${n(Math.abs(refund))}`,
   ]
 
-  const bom = '﻿'
-  const content = [csvRow(headers), csvRow(row)].join('\n')
+  const bom = '\uFEFF'
+  const content = [csvSafeRow(headers), csvSafeRow(row)].join('\n')
   const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
   a.download = `${clientName.replace(/\s+/g, '_')}_kdk.csv`
   a.click()
   URL.revokeObjectURL(url)

@@ -1,5 +1,8 @@
+// Public marketing landing page for TaxFlow AI.
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { auth } from '@/lib/auth/server'
+import { sql } from '@/lib/db/sql'
+import { itrDeadlineCopy } from '@/lib/dates'
 
 const EXTRACTED_FIELDS = [
   'Employer name, PAN, TAN',
@@ -7,7 +10,7 @@ const EXTRACTED_FIELDS = [
   'Gross salary u/s 17(1)',
   'HRA exempt u/s 10(13A)',
   'LTA exempt u/s 10(5)',
-  'Standard deduction ₹50,000',
+  'Standard deduction as printed',
   'Professional tax u/s 16(iii)',
   'All Chapter VI-A deductions',
   'Net taxable income',
@@ -17,15 +20,16 @@ const EXTRACTED_FIELDS = [
 ]
 
 const LOOM_DEMO_URL = process.env.NEXT_PUBLIC_LOOM_DEMO_URL
+const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'support@taxflowai.in'
 
 const FAQ = [
   {
     q: 'Is my client data safe?',
-    a: 'Documents are stored in the private storage bucket configured in your Supabase project. Access is restricted to the CA firm that owns the client record.',
+    a: 'Documents are stored privately in Neon object storage and shared only with the CA firm that owns the client. Files are processed by Google Gemini to extract data. See our draft Privacy notice for processors and retention.',
   },
   {
     q: 'Which software does the CSV export work with?',
-    a: 'The exported CSV works with Winman, Computax, KDK (Zen IT), Gen IT, ClearTax, and any software that accepts Excel or CSV input. Simply copy-paste the extracted values.',
+    a: 'Exports are formatted for common CA tools (Winman, KDK/Zen IT, and generic CSV). Always verify field mapping against your firm’s import template before filing.',
   },
   {
     q: 'What if the Form 16 is a scanned copy or photo?',
@@ -37,22 +41,28 @@ const FAQ = [
   },
   {
     q: 'Is TaxFlow AI free to use?',
-    a: 'Yes. TaxFlow AI is free during early access, with no extraction limit and no payment details required.',
+    a: 'Yes. TaxFlow AI is free during early access, with fair-use extraction limits and no payment details required.',
   },
 ]
 
+export const dynamic = 'force-dynamic'
+
+// Renders the home page using the visitor's login and firm status.
 export default async function HomePage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: firm } = user
-    ? await supabase.from('ca_firms').select('id').eq('user_id', user.id).maybeSingle()
-    : { data: null }
+  const { data: session } = await auth.getSession()
+  const user = session?.user ?? null
+  const firm = user
+    ? (await sql()`select id::text as id from public.ca_firms where user_id = ${user.id}::uuid limit 1`)[0] ?? null
+    : null
   const accountHref = firm ? '/dashboard' : user ? '/login?error=account-setup' : '/login?mode=signup'
+  const itr = itrDeadlineCopy()
+  const ctaHeadline = itr.passed
+    ? 'Filing season continues. Start saving time today.'
+    : `Original ITR due date ${itr.dueLabel}. Start saving time today.`
 
   return (
     <div className="min-h-screen bg-white">
 
-      {/* ── Navbar ─────────────────────────────────── */}
       <nav className="border-b border-gray-100 px-6 py-4 sticky top-0 bg-white/95 backdrop-blur-sm z-30">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <span className="text-lg font-bold text-gray-900">TaxFlow AI</span>
@@ -101,7 +111,6 @@ export default async function HomePage() {
         </div>
       </nav>
 
-      {/* ── Hero ──────────────────────────────────── */}
       <section className="px-6 py-20 text-center max-w-4xl mx-auto">
         <div className="inline-block bg-green-50 border border-green-200 text-green-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
           Built for Indian CA firms
@@ -118,7 +127,7 @@ export default async function HomePage() {
         <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
           <Link href={accountHref}
             className="bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-colors">
-            {firm ? 'Go to dashboard' : user ? 'Finish account setup' : 'Start free — unlimited extractions'}
+            {firm ? 'Go to dashboard' : user ? 'Finish account setup' : 'Start free — early access'}
           </Link>
           <a href={LOOM_DEMO_URL ? '#demo' : accountHref}
             className="text-gray-600 hover:text-gray-900 px-8 py-4 rounded-xl font-medium text-lg border border-gray-200 hover:bg-gray-50 transition-colors">
@@ -128,7 +137,6 @@ export default async function HomePage() {
         <p className="text-sm text-gray-400 mt-3">No credit card · Setup in 2 minutes · Works with Winman, Computax, KDK</p>
       </section>
 
-      {/* ── Pain numbers ──────────────────────────── */}
       <section className="bg-gray-50 px-6 py-14">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
@@ -156,7 +164,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── Demo ──────────────────────────────────── */}
       {LOOM_DEMO_URL && <section id="demo" className="px-6 py-16 max-w-4xl mx-auto">
         <div className="text-center mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-3">Watch it work — 90 seconds</h2>
@@ -177,7 +184,6 @@ per Form 16` },
         </p>
       </section>}
 
-      {/* ── What gets extracted ───────────────────── */}
       <section className="bg-gray-50 px-6 py-16">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-10">
@@ -200,7 +206,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── How it works ──────────────────────────── */}
       <section className="px-6 py-16 max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <h2 className="text-3xl font-bold text-gray-900 mb-3">How it works</h2>
@@ -222,7 +227,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── Pricing ───────────────────────────────── */}
       <section id="pricing" className="bg-gray-50 px-6 py-16">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl font-bold text-gray-900 mb-3">Free during early access</h2>
@@ -234,7 +238,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── FAQ ───────────────────────────────────── */}
       <section id="faq" className="px-6 py-16 max-w-3xl mx-auto">
         <h2 className="text-3xl font-bold text-gray-900 text-center mb-10">Frequently asked questions</h2>
         <div className="space-y-4">
@@ -247,14 +250,13 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── Final CTA ─────────────────────────────── */}
       <section className="bg-green-600 px-6 py-16 text-center">
         <div className="max-w-2xl mx-auto">
           <h2 className="text-3xl font-bold text-white mb-4">
-            ITR deadline is July 31. Start saving time today.
+            {ctaHeadline}
           </h2>
           <p className="text-green-100 mb-8 text-lg">
-            Unlimited extractions. No payment details. Takes 2 minutes to set up.
+            Fair-use extractions. No payment details. Takes 2 minutes to set up. Confirm any deadline extensions on the IT portal.
           </p>
           <Link href={accountHref}
             className="inline-block bg-white text-green-700 hover:bg-green-50 px-10 py-4 rounded-xl font-bold text-lg transition-colors">
@@ -263,12 +265,13 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── Footer ────────────────────────────────── */}
       <footer className="border-t border-gray-100 px-6 py-8">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="font-bold text-gray-900">TaxFlow AI</span>
-          <div className="flex gap-6 text-sm text-gray-400">
-            <a href="mailto:harshpandeyiitian04@gmail.com" className="hover:text-gray-600">support@taxflowai.in</a>
+          <div className="flex flex-wrap gap-6 text-sm text-gray-400 justify-center">
+            <Link href="/privacy" className="hover:text-gray-600">Privacy (draft)</Link>
+            <Link href="/terms" className="hover:text-gray-600">Terms (draft)</Link>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-gray-600">{SUPPORT_EMAIL}</a>
             <span>Built for Indian CA firms</span>
           </div>
         </div>

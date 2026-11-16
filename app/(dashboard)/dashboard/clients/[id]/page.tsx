@@ -1,35 +1,33 @@
-import { createClient } from '@/lib/supabase/server'
+// Server page for one client's detail view and documents.
 import { redirect, notFound } from 'next/navigation'
-import { getCurrentFirm, getOrCreateUploadToken } from '@/lib/supabase/queries'
+import { auth } from '@/lib/auth/server'
+import {
+  getClientWithDocuments,
+  getCurrentFirm,
+  getOrCreateUploadToken,
+  isUuid,
+} from '@/lib/db/queries'
 import { ClientDetailClient } from '@/components/dashboard/ClientDetailClient'
 
+export const dynamic = 'force-dynamic'
+
+// Loads one client and their upload link for the detail screen.
 export default async function ClientDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: session } = await auth.getSession()
+  const user = session?.user
   if (!user) redirect('/login')
 
-  const firm = await getCurrentFirm()
+  const firm = await getCurrentFirm(user.id)
   if (!firm) redirect('/login')
 
-  const { data: client, error } = await supabase
-    .from('clients')
-    .select(`
-      *,
-      documents (
-        id, type, original_filename, extraction_status,
-        extracted_data, extraction_error, file_size_bytes, created_at
-      )
-    `)
-    .eq('id', id)
-    .eq('ca_firm_id', firm.id)
-    .single()
+  const client = isUuid(id) ? await getClientWithDocuments(id, firm.id) : null
 
-  if (error || !client) notFound()
+  if (!client) notFound()
 
   const token = await getOrCreateUploadToken(id, firm.id)
   const uploadUrl = token

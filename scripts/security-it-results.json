@@ -1,0 +1,115 @@
+{
+  "summary": {
+    "branch": "br-winter-forest-b3bu6unt",
+    "total": 20,
+    "passed": 20,
+    "failed": 0,
+    "failures": [],
+    "authUsers": {
+      "USER_A": "56e3a3e9-83fe-4770-b3a0-29a9d28701d9",
+      "USER_B": "04acd052-0041-4b1d-9c73-3d3aee1d1a1b"
+    }
+  },
+  "results": [
+    {
+      "name": "seed_two_firms",
+      "ok": true,
+      "detail": "A=e7d86c91… B=9316d658…"
+    },
+    {
+      "name": "anonymous_select_ca_firms_empty",
+      "ok": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "firm_a_select_own_clients",
+      "ok": true,
+      "detail": "rows=1"
+    },
+    {
+      "name": "firm_a_cannot_select_firm_b_client",
+      "ok": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "firm_a_select_own_documents",
+      "ok": true,
+      "detail": "rows=1"
+    },
+    {
+      "name": "firm_a_cannot_select_firm_b_document",
+      "ok": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "firm_a_cannot_update_firm_b_client",
+      "ok": true,
+      "detail": "name=Client B1"
+    },
+    {
+      "name": "firm_a_cannot_delete_firm_b_client",
+      "ok": true,
+      "detail": "exists=true"
+    },
+    {
+      "name": "firm_a_cannot_insert_into_firm_b",
+      "ok": true,
+      "detail": "policy denied"
+    },
+    {
+      "name": "firm_a_cannot_consume_firm_b_quota",
+      "ok": true,
+      "detail": "code=42501"
+    },
+    {
+      "name": "firm_a_can_consume_own_quota",
+      "ok": true,
+      "detail": "ok=true"
+    },
+    {
+      "name": "firm_b_select_own_clients",
+      "ok": true,
+      "detail": "rows=1"
+    },
+    {
+      "name": "invalid_jwt_sub_no_rows_or_error",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "anonymous_rpc_consume_denied",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "upload_token_can_consume_own_firm_quota",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "claim_upload_slot_firm_a",
+      "ok": true,
+      "detail": "rows=1"
+    },
+    {
+      "name": "upload_token_insert_document",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "upload_token_b_cannot_insert_firm_a_document",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "quota_race_respects_limit",
+      "ok": true,
+      "detail": "successes=5 finalCount=5 limit=5"
+    },
+    {
+      "name": "firm_b_can_access_own_document",
+      "ok": true,
+      "detail": "rows=1"
+    }
+  ]
+}

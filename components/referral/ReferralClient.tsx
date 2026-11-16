@@ -1,16 +1,19 @@
 'use client'
 
+// Referral invite link, sharing, and signup history for the firm.
+
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { CAFirm } from '@/types'
 
-interface Props { firm: CAFirm & { referral_code: string; referral_credits: number } }
+interface Props { firm: CAFirm & { referral_code: string } }
 
 interface ReferralRecord {
   email: string
   created_at: string
 }
 
+// Shows referral code, copy link, and list of referred firms.
 export function ReferralClient({ firm }: Props) {
   const [copied, setCopied] = useState(false)
   const [referrals, setReferrals] = useState<ReferralRecord[]>([])
@@ -28,6 +31,7 @@ export function ReferralClient({ firm }: Props) {
       .then(d => { setReferrals(d.referrals ?? []); setLoading(false) })
   }, [])
 
+  // Copies the referral signup URL to the clipboard.
   function copyLink() {
     navigator.clipboard.writeText(referralLink)
     setCopied(true)
@@ -45,7 +49,6 @@ export function ReferralClient({ firm }: Props) {
       </nav>
 
       <main className="max-w-3xl mx-auto px-6 py-8 space-y-5">
-        {/* How it works */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6">
           <h1 className="text-xl font-bold text-gray-900 mb-1">Invite CA colleagues</h1>
           <p className="text-sm text-gray-500 mb-5">
@@ -64,7 +67,6 @@ export function ReferralClient({ firm }: Props) {
             ))}
           </div>
 
-          {/* Link */}
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
             <p className="text-xs font-medium text-gray-500 mb-2">Your referral link</p>
             <div className="flex items-center gap-2">
@@ -80,7 +82,6 @@ export function ReferralClient({ firm }: Props) {
             </div>
           </div>
 
-          {/* WhatsApp share */}
           <a href={`https://wa.me/?text=${waMsg}`}
             target="_blank" rel="noopener noreferrer"
             className="mt-3 flex items-center justify-center gap-2 w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl font-semibold text-sm transition-colors">
@@ -95,7 +96,6 @@ export function ReferralClient({ firm }: Props) {
           </p>
         </div>
 
-        {/* Referral history */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6">
           <h2 className="font-semibold text-gray-900 mb-4">
             Your referrals ({referrals.length})

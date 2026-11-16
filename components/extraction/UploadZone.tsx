@@ -1,6 +1,9 @@
 'use client'
 
-import { useRef, useState } from 'react'
+// Drag-and-drop area to pick a document file for upload.
+
+import { useId, useRef, useState } from 'react'
+import { MAX_UPLOAD_MB } from '@/lib/constants'
 
 interface UploadZoneProps {
   onFileSelect: (file: File) => void
@@ -8,6 +11,7 @@ interface UploadZoneProps {
   accept?: string
 }
 
+// File picker with size and type checks before upload.
 export function UploadZone({
   onFileSelect,
   isLoading,
@@ -16,20 +20,22 @@ export function UploadZone({
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const inputId = useId()
 
   const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
-  const MAX_SIZE_MB = 10
 
+  // Returns an error message if the file is not allowed.
   function validateFile(file: File): string | null {
     if (!ALLOWED_TYPES.includes(file.type)) {
       return 'Only PDF, JPEG, PNG, and WebP files are supported.'
     }
-    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      return `File must be under ${MAX_SIZE_MB} MB. This file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      return `File must be under ${MAX_UPLOAD_MB} MB. Compress or split the PDF. This file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`
     }
     return null
   }
 
+  // Validates then passes an acceptable file to the parent.
   function handleFile(file: File) {
     const err = validateFile(file)
     if (err) { setError(err); return }
@@ -37,36 +43,41 @@ export function UploadZone({
     onFileSelect(file)
   }
 
-  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+  // Handles a file dropped onto the zone.
+  function onDrop(e: React.DragEvent<HTMLLabelElement>) {
     e.preventDefault()
     setIsDragging(false)
+    if (isLoading) return
     const file = e.dataTransfer.files[0]
     if (file) handleFile(file)
   }
 
-  function onDragOver(e: React.DragEvent<HTMLDivElement>) {
+  // Highlights the zone while a file is dragged over it.
+  function onDragOver(e: React.DragEvent<HTMLLabelElement>) {
     e.preventDefault()
-    setIsDragging(true)
+    if (!isLoading) setIsDragging(true)
   }
 
+  // Clears drag highlight when the pointer leaves the zone.
   function onDragLeave() { setIsDragging(false) }
 
+  // Handles a file chosen with the hidden file input.
   const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) handleFile(file)
-    // Reset input so same file can be selected again
     e.target.value = ''
   }
 
   return (
     <div>
-      <div
-        onClick={() => !isLoading && inputRef.current?.click()}
+      <label
+        htmlFor={inputId}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         className={`
-          border-2 border-dashed rounded-2xl p-10 text-center transition-all
+          block border-2 border-dashed rounded-2xl p-10 text-center transition-all
+          focus-within:ring-2 focus-within:ring-green-500 focus-within:ring-offset-2
           ${isLoading
             ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
             : isDragging
@@ -76,23 +87,25 @@ export function UploadZone({
         `}
       >
         <input
+          id={inputId}
           ref={inputRef}
           type="file"
           accept={accept}
           onChange={onInputChange}
-          className="hidden"
+          className="sr-only"
           disabled={isLoading}
+          aria-label={`Upload document, max ${MAX_UPLOAD_MB} MB`}
         />
 
         {isLoading ? (
           <div className="flex flex-col items-center gap-3">
-            <div className="w-12 h-12 border-3 border-green-200 border-t-green-600 rounded-full animate-spin" style={{borderWidth:'3px'}} />
+            <div className="w-12 h-12 border-3 border-green-200 border-t-green-600 rounded-full animate-spin" style={{ borderWidth: '3px' }} aria-hidden />
             <p className="text-gray-600 font-medium">Extracting document data...</p>
             <p className="text-gray-400 text-sm">Gemini Vision is reading your file</p>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl transition-colors ${isDragging ? 'bg-green-100' : 'bg-gray-100'}`}>
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl transition-colors ${isDragging ? 'bg-green-100' : 'bg-gray-100'}`} aria-hidden>
               📄
             </div>
             <div>
@@ -100,7 +113,7 @@ export function UploadZone({
                 {isDragging ? 'Drop your document here' : 'Upload your document'}
               </p>
               <p className="text-sm text-gray-500">
-                Drag & drop or click to browse · PDF, JPEG, PNG, WebP · Max 10 MB
+                Drag & drop or press Enter to browse · PDF, JPEG, PNG, WebP · Max {MAX_UPLOAD_MB} MB
               </p>
             </div>
             <div className="flex gap-2 flex-wrap justify-center">
@@ -112,11 +125,11 @@ export function UploadZone({
             </div>
           </div>
         )}
-      </div>
+      </label>
 
       {error && (
-        <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
-          <span className="text-red-500 mt-0.5 shrink-0">⚠</span>
+        <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2" role="alert">
+          <span className="text-red-500 mt-0.5 shrink-0" aria-hidden>!</span>
           <p className="text-sm text-red-700">{error}</p>
         </div>
       )}

@@ -1,97 +1,141 @@
+// Scheduled job that sends due client reminders in batches.
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { sql } from '@/lib/db/sql'
 import { sendReminderEmail } from '@/lib/email'
-
-// Called by Vercel Cron twice daily: 9am and 2pm IST
-// Sends due reminders or marks them as overdue
+import { authorizeCron } from '@/lib/auth/cronAuth'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
+type DueReminder = {
+  id: string
+  type: string
+  message: string
+  client_id: string
+  ca_firm_id: string
+  client: unknown
+}
+
+const BATCH_SIZE = 50
+const TIME_BUDGET_MS = 45_000
+
+// Safely treats a JSON value as a plain object for reminder delivery.
 function getRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
 }
 
+// Processes pending reminders until the time budget is used.
 export async function GET(request: NextRequest) {
-  // Verify this is called by Vercel Cron (not a random person)
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = authorizeCron(request)
+  if (denied) return denied
 
-  const admin = createAdminClient()
+  const query = sql()
+  const started = Date.now()
   const now = new Date()
-
-  // Fetch pending reminders that are due
-  const { data: dueReminders, error } = await admin
-    .from('reminders')
-    .select(`
-      id, type, message, client_id, ca_firm_id,
-      client:clients(name, phone, email),
-      ca_firm:ca_firms(email, owner_name, firm_name)
-    `)
-    .eq('status', 'pending')
-    .lte('scheduled_at', now.toISOString())
-    .limit(50)
-
-  if (error) {
-    console.error('Cron: failed to fetch reminders:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-
-  if (!dueReminders?.length) {
-    return NextResponse.json({ processed: 0, message: 'No reminders due' })
-  }
 
   let sent = 0
   let failed = 0
+  let processed = 0
 
-  for (const reminder of dueReminders) {
+  while (Date.now() - started < TIME_BUDGET_MS) {
+    let dueReminders: DueReminder[]
     try {
-      const client = getRecord(reminder.client)
-      const phone = client.phone
-      const email = client.email
-
-      if (process.env.WATI_API_KEY && process.env.WATI_API_ENDPOINT && typeof phone === 'string') {
-        await sendWATIMessage({ phone, message: reminder.message })
-      } else if (typeof email === 'string') {
-        const delivered = await sendReminderEmail({
-          to: email,
-          clientName: String(client.name ?? 'Client'),
-          message: reminder.message,
-        })
-        if (!delivered) throw new Error('No WATI or Resend delivery is configured')
-      } else {
-        throw new Error('Configure WATI or add the client email for reminder delivery')
-      }
-
-      // Mark as sent
-      await admin
-        .from('reminders')
-        .update({ status: 'sent', sent_at: now.toISOString() })
-        .eq('id', reminder.id)
-
-      sent++
+      const rows = await query`
+        select r.id::text as id,
+               r.type,
+               r.message,
+               r.client_id::text as client_id,
+               r.ca_firm_id::text as ca_firm_id,
+               jsonb_build_object('name', c.name, 'phone', c.phone, 'email', c.email) as client
+          from public.reminders r
+          left join public.clients c on c.id = r.client_id
+         where r.status = 'pending'
+           and r.scheduled_at <= ${now.toISOString()}::timestamptz
+         order by r.scheduled_at asc
+         limit ${BATCH_SIZE}::int
+      `
+      dueReminders = rows as DueReminder[]
     } catch (err) {
-      console.error('Failed to send reminder:', reminder.id, err)
-      await admin
-        .from('reminders')
-        .update({ status: 'failed' })
-        .eq('id', reminder.id)
-      failed++
+      console.error('Cron: failed to fetch reminders:', err instanceof Error ? err.message : err)
+      return NextResponse.json({ error: 'Failed to fetch reminders' }, { status: 500 })
     }
+
+    if (!dueReminders.length) break
+
+    for (const reminder of dueReminders) {
+      if (Date.now() - started >= TIME_BUDGET_MS) break
+
+      processed++
+      try {
+        const client = getRecord(reminder.client)
+        const phone = client.phone
+        const email = client.email
+        let delivered = false
+        let failureReason = 'No delivery channel available'
+
+        if (process.env.WATI_API_KEY && process.env.WATI_API_ENDPOINT && typeof phone === 'string') {
+          await sendWATIMessage({ phone, message: reminder.message })
+          delivered = true
+        } else if (typeof email === 'string') {
+          const emailOk = await sendReminderEmail({
+            to: email,
+            clientName: String(client.name ?? 'Client'),
+            message: reminder.message,
+          })
+          if (emailOk) {
+            delivered = true
+          } else {
+            failureReason = 'Email delivery is not configured'
+          }
+        } else {
+          failureReason = 'Client has no phone or email for delivery'
+        }
+
+        if (!delivered) {
+          await query`
+            update public.reminders
+               set status = 'failed', failure_reason = ${failureReason}
+             where id = ${reminder.id}::uuid
+          `
+          failed++
+          continue
+        }
+
+        await query`
+          update public.reminders
+             set status = 'sent',
+                 sent_at = ${now.toISOString()}::timestamptz,
+                 failure_reason = null
+           where id = ${reminder.id}::uuid
+        `
+        sent++
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : 'Delivery failed'
+        console.error('Failed to send reminder:', reminder.id, reason)
+        await query`
+          update public.reminders
+             set status = 'failed', failure_reason = ${reason.slice(0, 500)}
+           where id = ${reminder.id}::uuid
+        `
+        failed++
+      }
+    }
+
+    if (dueReminders.length < BATCH_SIZE) break
   }
 
   return NextResponse.json({
-    processed: dueReminders.length,
+    processed,
     sent,
     failed,
     timestamp: now.toISOString(),
+    budget_ms: TIME_BUDGET_MS,
   })
 }
 
-// WATI WhatsApp API integration (optional — only if WATI_API_KEY is set)
+// Sends a one-off WhatsApp session message through WATI.
 async function sendWATIMessage({ phone, message }: { phone: string; message: string }) {
   const cleanPhone = phone.replace(/\D/g, '')
   const phoneWithCode = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`
@@ -102,9 +146,10 @@ async function sendWATIMessage({ phone, message }: { phone: string; message: str
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.WATI_API_KEY}`,
+        Authorization: `Bearer ${process.env.WATI_API_KEY}`,
       },
       body: JSON.stringify({ messageText: message }),
+      signal: AbortSignal.timeout(8000),
     }
   )
 

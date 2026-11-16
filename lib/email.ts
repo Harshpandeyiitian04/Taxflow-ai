@@ -1,11 +1,34 @@
-// lib/email.ts — reusable email functions using Resend
-
 import { Resend } from 'resend'
+import { escapeHtml } from '@/lib/utils/escapeHtml'
+
+// Sends transactional emails to CAs and clients via Resend.
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
-const FROM = process.env.RESEND_FROM_EMAIL ?? 'harshpandeyiitian04@gmail.com'
+const FROM = process.env.RESEND_FROM_EMAIL?.trim() || null
+const SUPPORT =
+  process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'support@taxflowai.in'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || ''
 
-// Email sent to CA when a client uploads documents
+// Returns false when email is not configured so sends are skipped quietly.
+function canSendEmail(): boolean {
+  if (!resend || !FROM) {
+    console.warn(JSON.stringify({ code: 'email_skipped_missing_from_or_key' }))
+    return false
+  }
+  return true
+}
+
+// Makes a link safe to embed in HTML or falls back to the app home.
+function safeUrl(href: string): string {
+  try {
+    const u = new URL(href)
+    if (u.protocol === 'https:' || u.protocol === 'http:') return escapeHtml(u.toString())
+  } catch {
+  }
+  return escapeHtml(APP_URL || '#')
+}
+
+// Emails the CA when a client uploads a document.
 export async function sendClientUploadNotification({
   caEmail,
   caName,
@@ -21,7 +44,7 @@ export async function sendClientUploadNotification({
   extractionSuccess: boolean
   dashboardUrl: string
 }) {
-  if (!resend) return
+  if (!canSendEmail()) return
 
   const docLabel: Record<string, string> = {
     form16: 'Form 16',
@@ -31,6 +54,12 @@ export async function sendClientUploadNotification({
     capital_gains: 'Capital Gains Statement',
     other: 'Document',
   }
+
+  const safeClient = escapeHtml(clientName)
+  const safeCa = escapeHtml(caName || 'CA')
+  const safeDoc = escapeHtml(docLabel[documentType] ?? documentType)
+  const safeDash = safeUrl(dashboardUrl)
+  const safeApp = safeUrl(`${APP_URL}/dashboard`)
 
   const subject = extractionSuccess
     ? `✓ ${clientName} uploaded ${docLabel[documentType] ?? documentType} — data extracted`
@@ -46,10 +75,10 @@ export async function sendClientUploadNotification({
       <p style="color:#ffffff;font-size:18px;font-weight:600;margin:0">TaxFlow AI</p>
     </div>
     <div style="padding:24px">
-      <p style="font-size:15px;color:#111827;margin:0 0 16px">Hello ${caName || 'CA'},</p>
+      <p style="font-size:15px;color:#111827;margin:0 0 16px">Hello ${safeCa},</p>
       <p style="font-size:15px;color:#111827;margin:0 0 16px">
-        Your client <strong>${clientName}</strong> has uploaded their
-        <strong>${docLabel[documentType] ?? documentType}</strong>.
+        Your client <strong>${safeClient}</strong> has uploaded their
+        <strong>${safeDoc}</strong>.
       </p>
       ${extractionSuccess
         ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;margin-bottom:20px">
@@ -64,13 +93,13 @@ export async function sendClientUploadNotification({
             </p>
           </div>`
       }
-      <a href="${dashboardUrl}"
+      <a href="${safeDash}"
         style="display:inline-block;background:#16a34a;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
         View extracted data →
       </a>
       <p style="font-size:12px;color:#9ca3af;margin:20px 0 0">
         TaxFlow AI · Built for Indian CA firms<br>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="color:#9ca3af">Visit dashboard</a>
+        <a href="${safeApp}" style="color:#9ca3af">Visit dashboard</a>
       </p>
     </div>
   </div>
@@ -78,19 +107,21 @@ export async function sendClientUploadNotification({
 </html>`
 
   try {
-    await resend.emails.send({ from: FROM, to: caEmail, subject, html })
-  } catch (err) {
-    console.error('Email send failed (non-fatal):', err)
-    // Never let email failure crash the upload flow
+    await resend!.emails.send({ from: FROM!, to: caEmail, subject, html })
+  } catch {
+    console.error(JSON.stringify({ code: 'email_send_failed' }))
   }
 }
 
-// Welcome email sent after first signup
+// Emails a new CA after they create an account.
 export async function sendWelcomeEmail(caEmail: string) {
-  if (!resend) return
+  if (!canSendEmail()) return
 
-  await resend.emails.send({
-    from: FROM,
+  const safeApp = safeUrl(`${APP_URL}/dashboard`)
+  const safeSupport = escapeHtml(SUPPORT)
+
+  await resend!.emails.send({
+    from: FROM!,
     to: caEmail,
     subject: 'Welcome to TaxFlow AI — your free account is ready',
     html: `
@@ -98,9 +129,9 @@ export async function sendWelcomeEmail(caEmail: string) {
 <html>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9fafb;margin:0;padding:20px">
   <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:28px">
-    <p style="font-size:18px;font-weight:700;color:#111827;margin:0 0 16px">Welcome to TaxFlow AI 🎉</p>
+    <p style="font-size:18px;font-weight:700;color:#111827;margin:0 0 16px">Welcome to TaxFlow AI</p>
     <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 16px">
-      You have unlimited Form 16 extractions during early access.
+      You have Form 16 extractions under fair-use limits during early access.
     </p>
     <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 20px">
       <strong>Start in 30 seconds:</strong><br>
@@ -109,19 +140,20 @@ export async function sendWelcomeEmail(caEmail: string) {
       3. Send it to your client on WhatsApp<br>
       4. Client uploads Form 16 → you see extracted data instantly
     </p>
-    <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard"
+    <a href="${safeApp}"
       style="display:inline-block;background:#16a34a;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
       Go to dashboard →
     </a>
     <p style="font-size:12px;color:#9ca3af;margin:20px 0 0">
-      Any questions? WhatsApp or email us at support@taxflowai.in
+      Any questions? Email us at ${safeSupport}
     </p>
   </div>
 </body>
 </html>`,
-  }).catch(err => console.error('Welcome email failed:', err))
+  }).catch(() => console.error(JSON.stringify({ code: 'welcome_email_failed' })))
 }
 
+// Sends a plain-text reminder from the CA to a client.
 export async function sendReminderEmail({
   to,
   clientName,
@@ -131,10 +163,10 @@ export async function sendReminderEmail({
   clientName: string
   message: string
 }): Promise<boolean> {
-  if (!resend) return false
+  if (!canSendEmail()) return false
 
-  const { error } = await resend.emails.send({
-    from: FROM,
+  const { error } = await resend!.emails.send({
+    from: FROM!,
     to,
     subject: 'A reminder from your tax consultant',
     text: `Hello ${clientName},\n\n${message}\n\nTaxFlow AI`,

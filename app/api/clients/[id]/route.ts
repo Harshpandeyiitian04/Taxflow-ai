@@ -1,31 +1,37 @@
+// API to view, update, or delete a single client.
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { getCurrentFirm, getOrCreateUploadToken } from '@/lib/supabase/queries'
+import { requireFirm } from '@/lib/auth/requireFirm'
+import {
+  deleteClientForFirm,
+  getClientStoragePaths,
+  getClientWithDocuments,
+  getOrCreateUploadToken,
+  isUuid,
+  updateClientForFirm,
+} from '@/lib/db/queries'
+import { deleteDocumentObjects, listDocumentKeys } from '@/lib/storage/documents'
 import { trackServerEvent } from '@/lib/analytics'
+import { logError, logWarn } from '@/lib/logger'
 
-// GET /api/clients/[id] — fetch client + documents + upload token
+// Loads one client, their documents, and an upload link.
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireFirm()
+  if (!auth.ok) return auth.response
+  const { user, firm } = auth
 
-  const firm = await getCurrentFirm()
-  if (!firm) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  let data
+  try {
+    data = isUuid(id) ? await getClientWithDocuments(id, firm.id) : null
+  } catch {
+    data = null
+  }
 
-  const { data, error } = await supabase
-    .from('clients')
-    .select(`*, documents(id, type, original_filename, extraction_status, extracted_data, extraction_error, file_size_bytes, created_at)`)
-    .eq('id', id)
-    .eq('ca_firm_id', firm.id)  // RLS: can only fetch own clients
-    .single()
+  if (!data) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
-  if (error || !data) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
-
-  // Get or create upload token for sharing
   const token = await getOrCreateUploadToken(id, firm.id)
   const uploadUrl = token
     ? `${process.env.NEXT_PUBLIC_APP_URL}/upload/${token}`
@@ -38,18 +44,15 @@ export async function GET(
   return NextResponse.json({ client: data, uploadUrl })
 }
 
-// PATCH /api/clients/[id] — update status or details
+// Patches allowed client fields such as status or GST details.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const firm = await getCurrentFirm()
-  if (!firm) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const auth = await requireFirm()
+  if (!auth.ok) return auth.response
+  const { firm } = auth
 
   const body = await request.json()
   const validStatuses = ['pending', 'received', 'processing', 'done', 'filed']
@@ -80,38 +83,66 @@ export async function PATCH(
     if (key in body) updates[key] = body[key]
   }
 
-  const { data, error } = await supabase
-    .from('clients')
-    .update(updates)
-    .eq('id', id)
-    .eq('ca_firm_id', firm.id)
-    .select()
-    .single()
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+  }
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ client: data })
+  try {
+    const client = await updateClientForFirm(id, firm.id, updates)
+    if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    return NextResponse.json({ client })
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Failed to update client' },
+      { status: 500 }
+    )
+  }
 }
 
-// DELETE /api/clients/[id] — remove client and all documents
+// Deletes the client row and removes stored document files.
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireFirm()
+  if (!auth.ok) return auth.response
+  const { firm } = auth
 
-  const firm = await getCurrentFirm()
-  if (!firm) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+  }
 
-  // Cascade deletes documents + tokens due to ON DELETE CASCADE
-  const { error } = await supabase
-    .from('clients')
-    .delete()
-    .eq('id', id)
-    .eq('ca_firm_id', firm.id)
+  try {
+    const paths = await getClientStoragePaths(id, firm.id)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    let listedPaths: string[] = []
+    try {
+      listedPaths = await listDocumentKeys({ firmId: firm.id, clientId: id })
+    } catch (err: unknown) {
+      logWarn('client_storage_list_failed', {
+        message: err instanceof Error ? err.message : 'unknown',
+        clientId: id,
+      })
+    }
+    const toRemove = [...new Set([...paths, ...listedPaths])]
+
+    if (toRemove.length) {
+      try {
+        await deleteDocumentObjects({ firmId: firm.id, keys: toRemove })
+      } catch (err: unknown) {
+        logWarn('client_storage_cleanup_failed', {
+          message: err instanceof Error ? err.message : 'unknown',
+          clientId: id,
+        })
+      }
+    }
+
+    await deleteClientForFirm(id, firm.id)
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'unknown'
+    logError('client_delete_failed', { message, clientId: id })
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
   return NextResponse.json({ success: true })
 }

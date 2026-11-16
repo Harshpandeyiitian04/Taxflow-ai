@@ -1,0 +1,87 @@
+{
+  "employer": {
+    "name": null,
+    "pan": null,
+    "tan": null,
+    "address": null
+  },
+  "employee": {
+    "name": "Unknown",
+    "pan": null,
+    "designation": null,
+    "employee_id": null
+  },
+  "period": {
+    "assessment_year": null,
+    "financial_year": null,
+    "from_date": null,
+    "to_date": null
+  },
+  "income": {
+    "gross_salary": null,
+    "salary_17_1": null,
+    "perquisites_17_2": null,
+    "profits_in_lieu_17_3": null,
+    "hra_received": null,
+    "hra_exempt_10_13a": null,
+    "lta_exempt_10_5": null,
+    "other_exemptions_10": null,
+    "total_exempt_allowances": null,
+    "net_salary_after_exemptions": null,
+    "standard_deduction_16_ia": null,
+    "professional_tax_16_iii": null,
+    "entertainment_allowance_16_ii": null,
+    "total_deductions_under_16": null,
+    "income_from_salary": null,
+    "income_from_house_property": null,
+    "income_from_other_sources": null,
+    "gross_total_income": null
+  },
+  "deductions_vi_a": {
+    "80c": null,
+    "80ccc": null,
+    "80ccd_1": null,
+    "80ccd_1b_nps": null,
+    "80ccd_2_employer_nps": null,
+    "80d_mediclaim": null,
+    "80dd": null,
+    "80ddb": null,
+    "80e_education_loan": null,
+    "80ee": null,
+    "80g_donations": null,
+    "80gg_rent": null,
+    "80tta_savings_interest": null,
+    "80ttb": null,
+    "80u": null,
+    "other_deductions": null,
+    "total_chapter_vi_a": null
+  },
+  "tax_computation": {
+    "total_income_after_deductions": null,
+    "tax_on_total_income": null,
+    "surcharge": null,
+    "health_education_cess": null,
+    "gross_tax_liability": null,
+    "relief_under_89": null,
+    "net_tax_payable": null,
+    "interest_payable_234b": null,
+    "interest_payable_234c": null,
+    "total_tax_and_interest": null
+  },
+  "tds": {
+    "total_tds_deducted": null,
+    "total_tds_deposited": null,
+    "q1_tds_deducted": null,
+    "q2_tds_deducted": null,
+    "q3_tds_deducted": null,
+    "q4_tds_deducted": null,
+    "tds_deposited_challan_count": null
+  },
+  "meta": {
+    "extraction_confidence": "low",
+    "has_part_a": false,
+    "has_part_b": true,
+    "document_type": "form16_part_b_only",
+    "warnings": ["Many fields missing"]
+  }
+}

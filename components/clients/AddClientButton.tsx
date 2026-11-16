@@ -1,5 +1,7 @@
 'use client'
 
+// Button that opens add-client and upload-link dialogs.
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { Client } from '@/types'
@@ -20,6 +22,7 @@ const INITIAL_UPLOAD_MODAL_STATE: UploadModalState = {
   uploadUrl: '',
 }
 
+// Triggers client creation and then the share-link modal.
 export function AddClientButton() {
   const router = useRouter()
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -27,6 +30,7 @@ export function AddClientButton() {
     INITIAL_UPLOAD_MODAL_STATE
   )
 
+  // Closes the form and opens the upload link for the new client.
   function handleCreated(client: Client, uploadUrl: string) {
     setIsAddOpen(false)
     setUploadModal({
@@ -38,6 +42,7 @@ export function AddClientButton() {
     router.refresh()
   }
 
+  // Resets and hides the upload link modal.
   function closeUploadModal() {
     setUploadModal(INITIAL_UPLOAD_MODAL_STATE)
   }

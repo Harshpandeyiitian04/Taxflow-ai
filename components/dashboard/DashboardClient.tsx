@@ -1,20 +1,27 @@
 'use client'
 
+// Main client list with search, board view, and bulk actions.
+
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { AddClientModal } from '@/components/clients/AddClientModal'
 import { UploadLinkModal } from '@/components/clients/UploadLinkModal'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { downloadWinmanBulkCSV } from '@/lib/utils/winman-export'
 import type { CAFirm, Client, ClientStatus } from '@/types'
 
+type StatusFilter = ClientStatus | 'all' | 'in_progress'
+
 
 interface ClientWithDocs extends Client {
-  documents: { id: string; type: string; extraction_status: string; extracted_data?: Record<string, unknown> | null }[]
+  documents: { id: string; type: string; extraction_status: string; created_at?: string }[]
 }
 
 interface Props {
   initialClients: ClientWithDocs[]
   firm: CAFirm
+  totalClients?: number
+  truncated?: boolean
 }
 
 const STATUS_CONFIG: Record<ClientStatus, { label: string; bg: string; text: string }> = {
@@ -27,10 +34,16 @@ const STATUS_CONFIG: Record<ClientStatus, { label: string; bg: string; text: str
 
 const STATUS_ORDER: ClientStatus[] = ['pending', 'received', 'processing', 'done', 'filed']
 
-export function DashboardClient({ initialClients, firm }: Props) {
+// Dashboard home with client table, filters, and modals.
+export function DashboardClient({
+  initialClients,
+  firm,
+  totalClients,
+  truncated = false,
+}: Props) {
   const [clients, setClients] = useState<ClientWithDocs[]>(initialClients)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [tagFilters, setTagFilters] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<'board' | 'list'>('list')
   const [showAdd, setShowAdd] = useState(false)
@@ -40,8 +53,10 @@ export function DashboardClient({ initialClients, firm }: Props) {
   const [loadingLinkId, setLoadingLinkId] = useState<string | null>(null)
   const [schedulingClientId, setSchedulingClientId] = useState<string | null>(null)
   const [scheduledReminderCount, setScheduledReminderCount] = useState<Record<string, number>>({})
+  const [bannerError, setBannerError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
-  // Stats
   const stats = useMemo(() => ({
     total: clients.length,
     pending: clients.filter(c => c.status === 'pending').length,
@@ -49,14 +64,16 @@ export function DashboardClient({ initialClients, firm }: Props) {
     filed: clients.filter(c => c.status === 'filed').length,
   }), [clients])
 
-  // Filter
   const filtered = useMemo(() => {
     return clients.filter(c => {
       const matchSearch = !search ||
         c.name.toLowerCase().includes(search.toLowerCase()) ||
         (c.pan ?? '').toLowerCase().includes(search.toLowerCase()) ||
         (c.phone ?? '').includes(search)
-      const matchStatus = statusFilter === 'all' || c.status === statusFilter
+      const matchStatus = statusFilter === 'all'
+        || (statusFilter === 'in_progress'
+          ? c.status === 'received' || c.status === 'processing'
+          : c.status === statusFilter)
       const matchTags = tagFilters.length === 0 || tagFilters.every(tag => (c.tags ?? []).includes(tag))
       return matchSearch && matchStatus && matchTags
     })
@@ -67,20 +84,41 @@ export function DashboardClient({ initialClients, firm }: Props) {
     [clients]
   )
 
+  // Adds a new client to the list and opens the share-link modal.
   function handleClientCreated(client: Client, uploadUrl: string) {
     setClients(prev => [{ ...client, documents: [] }, ...prev])
     setShowAdd(false)
     setLinkModal({ name: client.name, url: uploadUrl, phone: client.phone ?? undefined })
   }
 
-  async function handleDelete(clientId: string) {
-    if (!confirm('Delete this client and all their documents?')) return
-    await fetch(`/api/clients/${clientId}`, { method: 'DELETE' })
+  // Deletes the client chosen in the confirm dialog.
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    const clientId = deleteTarget.id
+    const previous = clients
+    setDeleting(true)
+    setBannerError('')
     setClients(prev => prev.filter(c => c.id !== clientId))
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        setClients(previous)
+        const data = await res.json().catch(() => ({}))
+        setBannerError(data.error || 'Could not delete client. Please try again.')
+      }
+    } catch {
+      setClients(previous)
+      setBannerError('Network error while deleting client.')
+    } finally {
+      setDeleting(false)
+      setDeleteTarget(null)
+    }
   }
 
+  // Queues WhatsApp reminder emails for one client.
   async function scheduleReminders(clientId: string, sequence: string) {
     setSchedulingClientId(clientId)
+    setBannerError('')
     try {
       const response = await fetch('/api/reminders', {
         method: 'POST',
@@ -91,14 +129,16 @@ export function DashboardClient({ initialClients, firm }: Props) {
       if (!response.ok) throw new Error(data.error || 'Could not schedule reminders')
       setScheduledReminderCount(current => ({ ...current, [clientId]: data.scheduled }))
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Could not schedule reminders')
+      setBannerError(error instanceof Error ? error.message : 'Could not schedule reminders')
     } finally {
       setSchedulingClientId(null)
     }
   }
 
+  // Optimistically updates then syncs client status with the API.
   async function changeClientStatus(clientId: string, status: ClientStatus) {
     const previousClients = clients
+    setBannerError('')
     setClients(current => current.map(client => client.id === clientId ? { ...client, status } : client))
 
     const response = await fetch(`/api/clients/${clientId}`, {
@@ -109,16 +149,18 @@ export function DashboardClient({ initialClients, firm }: Props) {
 
     if (!response.ok) {
       setClients(previousClients)
-      alert('Could not update client status. Please try again.')
+      setBannerError('Could not update client status. Please try again.')
     }
   }
 
+  // Adds or removes one client from the bulk selection.
   function toggleClientSelection(clientId: string) {
     setSelectedClientIds(current => current.includes(clientId)
       ? current.filter(id => id !== clientId)
       : [...current, clientId])
   }
 
+  // Selects or clears all clients currently shown in the list.
   function toggleVisibleSelection() {
     const visibleIds = filtered.map(client => client.id)
     const allSelected = visibleIds.every(id => selectedClientIds.includes(id))
@@ -127,6 +169,7 @@ export function DashboardClient({ initialClients, firm }: Props) {
       : [...new Set([...current, ...visibleIds])])
   }
 
+  // Sets the same status on every selected client.
   async function updateSelectedStatus(status: ClientStatus) {
     const updates = await Promise.all(selectedClientIds.map(clientId =>
       fetch(`/api/clients/${clientId}`, {
@@ -137,7 +180,7 @@ export function DashboardClient({ initialClients, firm }: Props) {
     ))
 
     if (updates.some(response => !response.ok)) {
-      alert('Some client statuses could not be updated. Please refresh and try again.')
+      setBannerError('Some client statuses could not be updated. Please refresh and try again.')
       return
     }
 
@@ -147,16 +190,36 @@ export function DashboardClient({ initialClients, firm }: Props) {
     setSelectedClientIds([])
   }
 
-  function exportSelectedClients() {
-    const rows = clients.flatMap(client => {
-      if (!selectedClientIds.includes(client.id)) return []
-      const doc = client.documents.find(document => document.type === 'form16' && document.extraction_status === 'completed')
-      if (!doc?.extracted_data) return []
-      return [{ name: client.name, pan: client.pan, data: doc.extracted_data }]
-    })
+  // Builds a Winman CSV from selected clients with Form 16 data.
+  async function exportSelectedClients() {
+    const selected = clients.filter(client => selectedClientIds.includes(client.id))
+    const rows: Array<{ name: string; pan: string | null; data: Record<string, unknown> }> = []
+
+    for (const client of selected) {
+      const hasCompleted = client.documents.some(
+        document => document.type === 'form16' && document.extraction_status === 'completed'
+      )
+      if (!hasCompleted) continue
+
+      try {
+        const res = await fetch(`/api/clients/${client.id}`)
+        if (!res.ok) continue
+        const payload = await res.json()
+        const docs = (payload.client?.documents ?? []) as Array<{
+          type: string
+          extraction_status: string
+          extracted_data?: Record<string, unknown> | null
+        }>
+        const doc = docs.find(d => d.type === 'form16' && d.extraction_status === 'completed')
+        if (doc?.extracted_data) {
+          rows.push({ name: client.name, pan: client.pan, data: doc.extracted_data })
+        }
+      } catch {
+      }
+    }
 
     if (!rows.length) {
-      alert('Selected clients have no completed Form 16 extractions to export.')
+      setBannerError('Selected clients have no completed Form 16 extractions to export.')
       return
     }
     downloadWinmanBulkCSV(rows)
@@ -166,7 +229,6 @@ export function DashboardClient({ initialClients, firm }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navbar */}
       <nav className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-20">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-2">
@@ -229,12 +291,22 @@ export function DashboardClient({ initialClients, firm }: Props) {
         </div>
       )}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {/* Stats */}
+        {truncated && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Showing the newest 500 of {totalClients ?? clients.length} clients. Refine with search or contact support for larger practices.
+          </div>
+        )}
+        {bannerError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start justify-between gap-3" role="alert">
+            <span>{bannerError}</span>
+            <button type="button" onClick={() => setBannerError('')} className="text-red-500 hover:text-red-700 shrink-0" aria-label="Dismiss error">✕</button>
+          </div>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
             { label: 'Total clients', value: stats.total, onClick: () => setStatusFilter('all') },
             { label: 'Pending docs', value: stats.pending, onClick: () => setStatusFilter('pending') },
-            { label: 'In progress', value: stats.inProgress, onClick: () => setStatusFilter('received') },
+            { label: 'In progress', value: stats.inProgress, onClick: () => setStatusFilter('in_progress') },
             { label: 'Filed', value: stats.filed, onClick: () => setStatusFilter('filed') },
           ].map(s => (
             <button key={s.label} onClick={s.onClick}
@@ -245,7 +317,6 @@ export function DashboardClient({ initialClients, firm }: Props) {
           ))}
         </div>
 
-        {/* Toolbar */}
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
           <div className="relative flex-1">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,10 +326,11 @@ export function DashboardClient({ initialClients, firm }: Props) {
               placeholder="Search by name, PAN, or phone..."
               className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as ClientStatus | 'all')}
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)}
             className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="all">All statuses</option>
             <option value="pending">Pending docs</option>
+            <option value="in_progress">In progress</option>
             <option value="received">Received</option>
             <option value="processing">Processing</option>
             <option value="done">Done</option>
@@ -286,7 +358,6 @@ export function DashboardClient({ initialClients, firm }: Props) {
           </button>
         </div>
 
-        {/* Client status board and list */}
         {viewMode === 'board' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 items-start">
             {STATUS_ORDER.map(status => {
@@ -351,7 +422,6 @@ export function DashboardClient({ initialClients, firm }: Props) {
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
-              {/* Table header — desktop only */}
               <div className="hidden sm:grid grid-cols-[28px_1fr_120px_100px_auto] gap-4 px-5 py-2.5 bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
                 <input type="checkbox" aria-label="Select all visible clients"
                   checked={filtered.length > 0 && filtered.every(client => selectedClientIds.includes(client.id))}
@@ -373,7 +443,6 @@ export function DashboardClient({ initialClients, firm }: Props) {
                     <input type="checkbox" aria-label={`Select ${client.name}`}
                       checked={selectedClientIds.includes(client.id)}
                       onChange={() => toggleClientSelection(client.id)} />
-                    {/* Client info */}
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-linear-to-br from-blue-100 to-blue-200 flex items-center justify-center text-sm font-semibold text-blue-700 shrink-0">
                         {client.name.charAt(0).toUpperCase()}
@@ -395,15 +464,12 @@ export function DashboardClient({ initialClients, firm }: Props) {
                       </div>
                     </div>
 
-                    {/* AY */}
                     <span className="text-sm text-gray-500 hidden sm:block">{client.assessment_year ? `AY ${client.assessment_year}` : 'AY not set'}</span>
 
-                    {/* Status */}
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full w-fit ${cfg.bg} ${cfg.text}`}>
                       {cfg.label}
                     </span>
 
-                    {/* Actions */}
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {client.status === 'pending' && (
                         <button onClick={() => void scheduleReminders(client.id, 'document_request')}
@@ -436,16 +502,17 @@ export function DashboardClient({ initialClients, firm }: Props) {
                         disabled={loadingLinkId === client.id}
                         onClick={async () => {
                           setLoadingLinkId(client.id)
+                          setBannerError('')
                           try {
                             const res = await fetch(`/api/clients/${client.id}`)
-                            const data = await res.json()
-                            if (data.uploadUrl) {
-setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? undefined })
+                            const data = await res.json().catch(() => ({}))
+                            if (res.ok && data.uploadUrl) {
+                              setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? undefined })
                             } else {
-                              alert('Could not generate upload link. Please try again.')
+                              setBannerError('Could not generate upload link. Please try again.')
                             }
                           } catch {
-                            alert('Network error. Please try again.')
+                            setBannerError('Network error. Please try again.')
                           } finally {
                             setLoadingLinkId(null)
                           }
@@ -453,7 +520,10 @@ setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? un
                         className="text-xs text-green-600 hover:text-green-800 px-2.5 py-1.5 rounded-lg border border-green-200 hover:border-green-300 bg-green-50 transition-colors disabled:opacity-50">
                         {loadingLinkId === client.id ? '...' : 'Share link'}
                       </button>
-                      <button onClick={() => handleDelete(client.id)}
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget({ id: client.id, name: client.name })}
+                        aria-label={`Delete ${client.name}`}
                         className="text-xs text-gray-400 hover:text-red-600 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
                         ✕
                       </button>
@@ -484,7 +554,6 @@ setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? un
           </div>
         )}
 
-        {/* Footer count */}
         {filtered.length > 0 && (
           <p className="text-xs text-gray-400 mt-3 text-right">
             Showing {filtered.length} of {clients.length} clients
@@ -492,7 +561,6 @@ setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? un
         )}
       </main>
 
-      {/* Modals */}
       <AddClientModal
         open={showAdd}
         onClose={() => setShowAdd(false)}
@@ -507,6 +575,18 @@ setLinkModal({ name: client.name, url: data.uploadUrl, phone: client.phone ?? un
           onClose={() => setLinkModal(null)}
         />
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete client?"
+        message={deleteTarget
+          ? `Delete ${deleteTarget.name} and all their documents? This cannot be undone.`
+          : ''}
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => { if (!deleting) setDeleteTarget(null) }}
+      />
     </div>
   )
 }
