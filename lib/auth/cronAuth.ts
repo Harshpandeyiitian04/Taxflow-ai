@@ -1,7 +1,9 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 
-/** Authorize Vercel cron / bearer-secret callers. Returns a response when denied. */
+// Checks secret tokens on scheduled background job requests.
+
+// Stops the request unless the caller presents the correct cron secret.
 export function authorizeCron(request: NextRequest, secret = process.env.CRON_SECRET): NextResponse | null {
   if (!secret) {
     return NextResponse.json({ error: 'Cron is not configured' }, { status: 500 })

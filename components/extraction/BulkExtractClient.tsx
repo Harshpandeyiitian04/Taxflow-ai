@@ -1,5 +1,7 @@
 'use client'
 
+// Upload and process many Form 16 files in small batches.
+
 import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { generateForm16CSV } from '@/lib/utils/export'
@@ -13,12 +15,14 @@ interface BulkResult {
   error?: string
 }
 
+// Turns unknown JSON into a plain key-value object.
 function getRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
 }
 
+// Manages multi-file queue, progress, and CSV export.
 export function BulkExtractClient() {
   const [files, setFiles] = useState<File[]>([])
   const [results, setResults] = useState<BulkResult[]>([])
@@ -27,6 +31,7 @@ export function BulkExtractClient() {
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  // Validates selected files and builds the pending results list.
   function handleFiles(selected: FileList | null) {
     if (!selected) return
     setNotice('')
@@ -45,6 +50,7 @@ export function BulkExtractClient() {
     setResults(arr.map(f => ({ filename: f.name, status: 'pending' })))
   }
 
+  // Runs extraction API calls in batches of three.
   async function runBulk(retryFailedOnly: boolean) {
     if (!files.length || running) return
     const indices = results
@@ -108,6 +114,7 @@ export function BulkExtractClient() {
     abortRef.current = null
   }
 
+  // Stops in-flight extractions and resets processing rows.
   function cancelRun() {
     abortRef.current?.abort()
     setRunning(false)
@@ -117,6 +124,7 @@ export function BulkExtractClient() {
     setNotice('Bulk extraction cancelled.')
   }
 
+  // Downloads one CSV summary of all successful extractions.
   function exportAll() {
     const completed = results.filter(r => r.status === 'done' && r.data)
     if (!completed.length) return

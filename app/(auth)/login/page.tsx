@@ -1,23 +1,28 @@
 'use client'
 
+// Magic-link sign-up and sign-in page for CA firms.
 import { Suspense, useEffect, useState, useSyncExternalStore } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { authClient } from '@/lib/auth/client'
 import Link from 'next/link'
 
+// Listens for URL hash changes in the browser.
 function subscribeToHash(onChange: () => void) {
   window.addEventListener('hashchange', onChange)
   return () => window.removeEventListener('hashchange', onChange)
 }
 
+// Reads the current location hash on the client.
 function getHashSnapshot() {
   return window.location.hash
 }
 
+// Returns an empty hash during server rendering.
 function getServerHashSnapshot() {
   return ''
 }
 
+// Wraps the login form in a suspense boundary for search params.
 export default function LoginPage() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-gray-500">Loading login form…</div>}>
@@ -26,6 +31,7 @@ export default function LoginPage() {
   )
 }
 
+// Collects email and sends a Neon Auth magic link.
 function LoginForm() {
   const searchParams = useSearchParams()
   const refCode = searchParams.get('ref')
@@ -74,27 +80,29 @@ function LoginForm() {
     }
   }, [])
 
+  // Submits the form and requests a magic link email.
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const supabase = createClient()
-    const redirectUrl = new URL('/auth/callback', window.location.origin)
-    // Keep a ref parameter even when empty so the Supabase email template can
-    // append token_hash and type with a stable query-string separator.
-    redirectUrl.searchParams.set('ref', refCode?.trim().toUpperCase() ?? '')
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        shouldCreateUser: mode === 'signup',
-        emailRedirectTo: redirectUrl.toString(),
-      },
-    })
-    if (error) {
-      setError(error.message)
-      setLoading(false)
-    } else {
-      setSent(true)
+    const trimmedEmail = email.trim()
+    const callbackUrl = new URL('/auth/callback', window.location.origin)
+    callbackUrl.searchParams.set('ref', refCode?.trim().toUpperCase() ?? '')
+    callbackUrl.searchParams.set('next', '/dashboard')
+    try {
+      const { error } = await authClient.signIn.magicLink({
+        email: trimmedEmail,
+        callbackURL: callbackUrl.toString(),
+        ...(mode === 'signup' ? { name: trimmedEmail.split('@')[0] } : {}),
+      })
+      if (error) {
+        setError(error.message || 'Could not send the magic link. Please try again.')
+      } else {
+        setSent(true)
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not send the magic link. Please try again.')
+    } finally {
       setLoading(false)
     }
   }
@@ -144,7 +152,7 @@ function LoginForm() {
         {callbackError && (
           <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg mb-4">
             {callbackError === 'account-setup'
-              ? 'Your email was verified, but we could not finish setting up your firm account. Check the Supabase database and server configuration, then request a new magic link.'
+              ? 'Your email was verified, but we could not finish setting up your firm account. Check the database and server configuration, then request a new magic link.'
               : callbackError === 'expired-link'
                 ? 'This magic link expired or was already used. Request a new link and open the newest email once.'
                 : 'This magic link could not be verified. Request a new link and try again.'}

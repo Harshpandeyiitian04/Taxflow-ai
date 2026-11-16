@@ -1,3 +1,4 @@
+// Root layout shared by every page in the app.
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { PostHogProvider } from '@/components/PostHogProvider'
@@ -19,6 +20,7 @@ export const metadata: Metadata = {
   },
 }
 
+// Wraps page content with fonts, styles, and product analytics.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">

@@ -1,5 +1,7 @@
+// Draft privacy notice page for TaxFlow AI.
 import Link from 'next/link'
 
+// Renders the public draft privacy policy content.
 export default function PrivacyPage() {
   const support = process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'support@taxflowai.in'
 
@@ -29,7 +31,7 @@ export default function PrivacyPage() {
         </ul>
         <h2>Processors</h2>
         <ul>
-          <li><strong>Supabase</strong> — authentication, Postgres database, private object storage</li>
+          <li><strong>Neon</strong> — authentication, Postgres database, private object storage</li>
           <li><strong>Google Gemini</strong> — document understanding / field extraction</li>
           <li><strong>Resend</strong> — transactional email (when configured)</li>
           <li><strong>PostHog</strong> — product analytics only after consent; no session replay</li>
@@ -38,7 +40,7 @@ export default function PrivacyPage() {
         </ul>
         <h2>Storage and sharing</h2>
         <p>
-          Documents are stored in a private Supabase storage bucket and shared only with the CA firm that owns
+          Documents are stored in a private Neon object storage bucket and shared only with the CA firm that owns
           the client record. Documents are processed by Google Gemini to extract data. They are not sold.
         </p>
         <h2>Retention</h2>

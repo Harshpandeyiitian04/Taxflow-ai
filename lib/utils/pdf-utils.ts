@@ -1,6 +1,8 @@
 import { PDFDocument } from 'pdf-lib'
 
-/** Detect if a PDF is password-protected by trying to load it without a password. */
+// Checks whether a PDF needs a password before it can be read.
+
+// Returns true when the PDF is locked with a password.
 export async function isPDFPasswordProtected(arrayBuffer: ArrayBuffer): Promise<boolean> {
   try {
     await PDFDocument.load(arrayBuffer)

@@ -1,5 +1,7 @@
+// Friendly 404 page with links back to home and the dashboard.
 import Link from 'next/link'
 
+// Tells the user the page was not found and offers navigation links.
 export default function NotFound() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">

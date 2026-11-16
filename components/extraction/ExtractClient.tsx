@@ -1,5 +1,7 @@
 'use client'
 
+// Single-document AI extraction page with document type picker.
+
 import { useState } from 'react'
 import { UploadZone } from '@/components/extraction/UploadZone'
 import { ExtractionResult } from '@/components/extraction/ExtractionResult'
@@ -23,6 +25,7 @@ const EXTRACTED_FIELDS: Record<DocumentType, string[]> = {
   capital_gains: ['Asset and transaction details', 'Purchase and sale values', 'Holding period', 'STCG/LTCG summary'],
 }
 
+// Uploads one file and shows extraction results or errors.
 export function ExtractClient() {
   const [state, setState] = useState<State>('idle')
   const [result, setResult] = useState<Record<string, unknown> | null>(null)
@@ -30,6 +33,7 @@ export function ExtractClient() {
   const [errorMsg, setErrorMsg] = useState('')
   const [docType, setDocType] = useState<DocumentType>('form16')
 
+  // Sends the file to the extract API and updates UI state.
   async function handleFileSelect(file: File) {
     setState('extracting')
     setFilename(file.name)
@@ -59,6 +63,7 @@ export function ExtractClient() {
     }
   }
 
+  // Clears results so the user can upload again.
   function reset() {
     setState('idle')
     setResult(null)

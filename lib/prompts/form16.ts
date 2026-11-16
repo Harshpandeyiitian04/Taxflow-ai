@@ -1,5 +1,4 @@
-// The Form 16 extraction system prompt — this is your core IP
-// Tested on 200+ Form 16 documents across different employers and AYs
+// AI instructions for reading Form 16 salary certificates.
 
 export const FORM16_SYSTEM_PROMPT = `You are a specialized OCR and data extraction AI for Indian income tax documents.
 

@@ -1,6 +1,8 @@
+// Structured logs for errors without leaking private client data.
+
 type LogMeta = Record<string, string | number | boolean | null | undefined>
 
-/** Redacted structured logging — never pass PAN, names, tokens, or raw model output. */
+// Writes a redacted error line to the server log.
 export function logError(code: string, meta: LogMeta = {}): void {
   const safe: Record<string, string | number | boolean | null> = { code }
   for (const [key, value] of Object.entries(meta)) {
@@ -14,6 +16,7 @@ export function logError(code: string, meta: LogMeta = {}): void {
   console.error(JSON.stringify(safe))
 }
 
+// Writes a redacted warning line to the server log.
 export function logWarn(code: string, meta: LogMeta = {}): void {
   const safe: Record<string, string | number | boolean | null> = { code }
   for (const [key, value] of Object.entries(meta)) {

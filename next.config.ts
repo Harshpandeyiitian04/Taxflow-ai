@@ -1,14 +1,19 @@
+// Next.js settings plus security headers for every page.
 import type { NextConfig } from 'next'
 
-const supabaseHost = (() => {
+// Gets the main site address from a full URL, or blank if invalid.
+function originOf(value: string | undefined): string {
+  if (!value) return ''
   try {
-    return process.env.NEXT_PUBLIC_SUPABASE_URL
-      ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).origin
-      : ''
+    return new URL(value).origin
   } catch {
     return ''
   }
-})()
+}
+
+const neonAuthOrigin = originOf(process.env.NEON_AUTH_BASE_URL)
+const storageOrigin = originOf(process.env.AWS_ENDPOINT_URL_S3)
+const dataHosts = [neonAuthOrigin, storageOrigin].filter(Boolean).join(' ')
 
 const posthogHost = (() => {
   try {
@@ -24,15 +29,16 @@ const cspReportOnly = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${posthogHost}`,
   `style-src 'self' 'unsafe-inline'`,
-  `img-src 'self' data: blob: ${supabaseHost}`.trim(),
+  `img-src 'self' data: blob: ${dataHosts}`.trim(),
   `font-src 'self' data:`,
-  `connect-src 'self' ${supabaseHost} ${posthogHost} https://generativelanguage.googleapis.com`.trim(),
+  `connect-src 'self' ${dataHosts} ${posthogHost} https://generativelanguage.googleapis.com`.trim(),
   `frame-ancestors 'none'`,
   `base-uri 'self'`,
   `form-action 'self'`,
 ].join('; ')
 
 const nextConfig: NextConfig = {
+  // Adds security-related HTTP headers to every response.
   async headers() {
     return [
       {

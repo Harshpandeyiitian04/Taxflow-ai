@@ -1,10 +1,14 @@
 import { form16Schema, genericExtractionSchema, type Form16ExtractedData } from '@/lib/schemas/form16'
 import { runForm16Checks } from '@/lib/validation/form16Checks'
 
+// Turns raw AI text into validated extraction JSON.
+
+// Removes markdown code fences around JSON from the model.
 export function stripJsonFences(raw: string): string {
   return raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim()
 }
 
+// Parses and validates extraction JSON for the given document type.
 export function parseExtractionJson(
   docType: string,
   rawText: string

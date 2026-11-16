@@ -1,10 +1,13 @@
 import type { Form16ExtractedData } from '@/lib/schemas/form16'
 
+// Sanity checks on extracted Form 16 numbers and IDs.
+
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const TAN_RE = /^[A-Z]{4}[0-9]{5}[A-Z]$/
 const AY_RE = /^\d{4}-\d{2}$/
 const TOLERANCE = 1
 
+// Converts a value to a finite number or null.
 function n(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
@@ -14,7 +17,7 @@ export interface Form16ValidationResult {
   issues: string[]
 }
 
-/** Pure validators — never mutate extracted values. */
+// Lists problems with PAN, TDS totals, and salary math without changing data.
 export function runForm16Checks(data: Form16ExtractedData): Form16ValidationResult {
   const issues: string[] = []
 

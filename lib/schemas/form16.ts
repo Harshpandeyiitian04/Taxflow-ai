@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+// Describes the shape of extracted Form 16 data for validation.
+
 const nullableNumber = z.number().finite().nullable()
 const nullableString = z.string().nullable()
 
@@ -98,5 +100,5 @@ export const form16Schema = z.object({
 
 export type Form16ExtractedData = z.infer<typeof form16Schema>
 
-/** Lenient schema for non-Form16 document types. */
+// Accepts any JSON object for non–Form 16 document types.
 export const genericExtractionSchema = z.record(z.string(), z.unknown())

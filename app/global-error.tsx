@@ -1,5 +1,6 @@
 'use client'
 
+// Top-level error UI when the root layout itself fails.
 export default function GlobalError({
   reset,
 }: {

@@ -1,5 +1,7 @@
 'use client'
 
+// Click-to-edit notes area for a single client.
+
 import { useState } from 'react'
 
 interface NotesEditorProps {
@@ -7,6 +9,7 @@ interface NotesEditorProps {
   initialNotes: string | null
 }
 
+// Shows client notes and saves edits to the API.
 export function NotesEditor({ clientId, initialNotes }: NotesEditorProps) {
   const [notes, setNotes] = useState(initialNotes ?? '')
   const [lastSaved, setLastSaved] = useState(initialNotes ?? '')
@@ -15,6 +18,7 @@ export function NotesEditor({ clientId, initialNotes }: NotesEditorProps) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
+  // Persists the current notes text for this client.
   async function save() {
     setSaving(true)
     setError('')
@@ -39,6 +43,7 @@ export function NotesEditor({ clientId, initialNotes }: NotesEditorProps) {
     }
   }
 
+  // Discards edits and closes the editor.
   function cancel() {
     setNotes(lastSaved)
     setError('')

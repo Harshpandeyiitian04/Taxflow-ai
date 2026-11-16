@@ -1,3 +1,4 @@
+// Tests business rules on parsed Form 16 data using JSON fixtures.
 import { describe, expect, it } from 'vitest'
 import { runForm16Checks } from '@/lib/validation/form16Checks'
 import { form16Schema } from '@/lib/schemas/form16'
@@ -5,7 +6,9 @@ import clean from './fixtures/form16-clean.json'
 import tampered from './fixtures/form16-tampered.json'
 import missing from './fixtures/form16-missing.json'
 
+// Valid, bad, and sparse Form 16 samples.
 describe('runForm16Checks', () => {
+  // A good fixture should pass with no issues.
   it('passes a clean fixture', () => {
     const data = form16Schema.parse(clean)
     const result = runForm16Checks(data)
@@ -13,6 +16,7 @@ describe('runForm16Checks', () => {
     expect(result.issues).toHaveLength(0)
   })
 
+  // Wrong PAN, TAN, totals, and math should be reported.
   it('flags PAN/TAN, AY, TDS sum, and arithmetic mismatches', () => {
     const data = form16Schema.parse(tampered)
     const result = runForm16Checks(data)
@@ -25,6 +29,7 @@ describe('runForm16Checks', () => {
     expect(result.issues.some(i => i.includes('Chapter VI-A'))).toBe(true)
   })
 
+  // Mostly empty fields should still pass without made-up numbers.
   it('allows mostly-null missing fixtures without invented values', () => {
     const data = form16Schema.parse(missing)
     const result = runForm16Checks(data)

@@ -1,11 +1,14 @@
 import type { AllowedUploadMime } from '@/lib/constants'
 
+// Checks upload files match their claimed type using file headers.
+
+// Returns true when the buffer starts with the given byte pattern.
 function startsWithBytes(buf: Uint8Array, bytes: number[]): boolean {
   if (buf.length < bytes.length) return false
   return bytes.every((b, i) => buf[i] === b)
 }
 
-/** Verify declared MIME matches file magic bytes. */
+// Confirms the file's real format matches the MIME type the browser sent.
 export function verifyMagicBytes(
   buffer: ArrayBuffer,
   declaredMime: string

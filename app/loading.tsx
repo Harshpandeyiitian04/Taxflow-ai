@@ -1,3 +1,5 @@
+// Full-page spinner shown while a route segment is loading.
+// Displays a centered spinner while route content is loading.
 export default function Loading() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">

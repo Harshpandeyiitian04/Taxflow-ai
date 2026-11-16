@@ -1,4 +1,4 @@
-// lib/prompts/bank-statement.ts
+// AI instructions for reading Indian bank statement PDFs.
 
 export const BANK_STATEMENT_SYSTEM_PROMPT = `You are a specialized AI for extracting financial data from Indian bank statements.
 

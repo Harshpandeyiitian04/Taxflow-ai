@@ -1,3 +1,5 @@
+// GST return due dates and WhatsApp phone formatting for Indian clients.
+
 export type GSTReturnType = 'GSTR-1' | 'GSTR-3B' | 'CMP-08'
 
 export interface GSTClientInput {
@@ -18,21 +20,22 @@ export interface GSTDeadline {
   daysLeft: number
 }
 
+// Sets a due date to the end of a calendar day.
 function endOfDay(year: number, monthIndex: number, day: number): Date {
   return new Date(year, monthIndex, day, 23, 59, 59, 999)
 }
 
+// Counts whole days from one date to another.
 function daysBetween(from: Date, to: Date): number {
   const ms = to.getTime() - from.getTime()
   return Math.ceil(ms / (1000 * 60 * 60 * 24))
 }
 
-/** Roll a due date forward month-by-month until it is not more than 15 days overdue. */
+// Finds the next monthly GST due date that is not long past.
 function nextMonthlyDue(now: Date, dayOfMonth: number): Date {
   let year = now.getFullYear()
   let month = now.getMonth()
   let due = endOfDay(year, month, dayOfMonth)
-  // If more than 15 days past this month's due, move to next month
   while (daysBetween(now, due) < -15) {
     month += 1
     if (month > 11) {
@@ -44,18 +47,17 @@ function nextMonthlyDue(now: Date, dayOfMonth: number): Date {
   return due
 }
 
+// Returns which quarter of the year a month falls in.
 function currentQuarterIndex(monthIndex: number): number {
   return Math.floor(monthIndex / 3)
 }
 
-/** Due dates for QRMP / composition fall in the month after the quarter ends. */
+// Finds the next quarterly GST due date that is not long past.
 function nextQuarterlyDue(now: Date, dayOfMonth: number): Date {
-  // Month after quarter end: Q0→Apr(3), Q1→Jul(6), Q2→Oct(9), Q3→Jan next (0)
   const dueMonthForQuarter = (quarter: number) => ((quarter + 1) * 3) % 12
   const dueYearFor = (year: number, quarter: number) =>
     quarter === 3 ? year + 1 : year
 
-  // Start one quarter back so early-in-quarter dues (e.g. 13 Apr for Q0) are not skipped
   let year = now.getFullYear()
   let q = currentQuarterIndex(now.getMonth())
   q -= 1
@@ -76,13 +78,7 @@ function nextQuarterlyDue(now: Date, dayOfMonth: number): Date {
   return due
 }
 
-/**
- * GST deadlines for clients.
- * Window: from 15 days overdue through 30 days ahead.
- * Monthly: GSTR-1 on 11th, GSTR-3B on 20th of current period first.
- * Quarterly: GSTR-1 on 13th, GSTR-3B on 22nd of month after quarter.
- * Composition: CMP-08 on 18th of month after quarter.
- */
+// Lists upcoming GST filing deadlines for clients with GSTINs.
 export function getGSTDeadlines(clients: GSTClientInput[], now: Date = new Date()): GSTDeadline[] {
   const deadlines: GSTDeadline[] = []
 
@@ -120,7 +116,7 @@ export function getGSTDeadlines(clients: GSTClientInput[], now: Date = new Date(
   return deadlines.sort((a, b) => a.daysLeft - b.daysLeft)
 }
 
-/** Normalize Indian mobile to 91XXXXXXXXXX digits for wa.me links. */
+// Formats a phone number for WhatsApp links in India.
 export function normalizeWhatsAppPhone(phone: string | null | undefined): string | null {
   if (!phone) return null
   let digits = phone.replace(/\D/g, '')

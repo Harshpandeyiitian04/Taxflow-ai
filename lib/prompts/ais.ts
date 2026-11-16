@@ -1,6 +1,4 @@
-// lib/prompts/ais.ts
-// AIS = Annual Information Statement — downloaded from incometax.gov.in
-// Contains aggregated income and transaction data from multiple sources
+// AI instructions for reading Annual Information Statement PDFs.
 
 export const AIS_SYSTEM_PROMPT = `You are an AI specialized in extracting data from India's Annual Information Statement (AIS) downloaded from the IT portal at incometax.gov.in.
 

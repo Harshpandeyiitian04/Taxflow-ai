@@ -1,21 +1,22 @@
-// lib/utils/winman-export.ts
-// Generates a CSV in Winman CA-ERP import format
-// Tested against Winman 2025 bulk import template
-
 import { csvSafeRow } from '@/lib/utils/csvSafe'
 
+// Builds CSV files that Winman and KDK tax software can import.
+
+// Formats a number as text with two decimal places for CSV cells.
 function n(val: unknown): string {
   if (val === null || val === undefined || val === '') return ''
   const num = Number(val)
   return isNaN(num) ? '' : num.toFixed(2)
 }
 
+// Turns a JSON value into a plain object map when possible.
 function getRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
 }
 
+// Trims a value down to plain text for CSV cells.
 function s(val: unknown): string {
   if (val === null || val === undefined) return ''
   return String(val).trim()
@@ -83,6 +84,7 @@ const WINMAN_HEADERS = [
   'ExtractedBy',
 ]
 
+// Maps extracted Form 16 data into one Winman import row.
 function buildWinmanRow(
   clientName: string,
   pan: string | null,
@@ -96,7 +98,6 @@ function buildWinmanRow(
   const tds = getRecord(data.tds)
   const meta = getRecord(data.meta)
 
-  // Leave Category / ResidentialStatus / TaxRegime empty — CA must verify before import
   const cells = [
     s(pan ?? emp.pan ?? ''),
     s(clientName),
@@ -165,7 +166,7 @@ function buildWinmanRow(
   return csvSafeRow(cells)
 }
 
-/** Pure CSV body (no BOM) for tests and downloads. */
+// Returns Winman CSV text for one client without downloading.
 export function buildWinmanCsvContent(
   clientName: string,
   pan: string | null,
@@ -182,7 +183,7 @@ export function buildWinmanCsvContent(
   ].join('\n')
 }
 
-/** Download single client in Winman format */
+// Downloads one client as a Winman import CSV file.
 export function downloadWinmanCSV(
   clientName: string,
   pan: string | null,
@@ -200,7 +201,7 @@ export function downloadWinmanCSV(
   URL.revokeObjectURL(url)
 }
 
-/** Download all clients in one Winman bulk import CSV */
+// Downloads many clients in one Winman bulk import CSV.
 export function downloadWinmanBulkCSV(
   clients: Array<{ name: string; pan: string | null; data: Record<string, unknown> }>
 ): void {
@@ -223,7 +224,7 @@ export function downloadWinmanBulkCSV(
   URL.revokeObjectURL(url)
 }
 
-/** KDK Zen IT format (simpler flat structure) */
+// Downloads one client in KDK Zen IT’s simpler CSV layout.
 export function downloadKDKCSV(
   clientName: string,
   pan: string | null,
@@ -241,6 +242,7 @@ export function downloadKDKCSV(
     'NetTaxableIncome', 'TaxPayable', 'TDSDeducted', 'Refund_Payable',
   ]
 
+  // Parses a cell value as a number defaulting to zero.
   const amount = (value: unknown) => Number(value) || 0
   const refund = amount(tds.total_tds_deducted) - amount(tax.net_tax_payable)
 

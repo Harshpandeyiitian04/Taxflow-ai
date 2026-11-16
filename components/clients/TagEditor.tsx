@@ -1,5 +1,7 @@
 'use client'
 
+// Add, remove, and save labels on a client record.
+
 import { useState } from 'react'
 
 const PRESET_TAGS = [
@@ -15,6 +17,7 @@ interface TagEditorProps {
   onUpdate?: (tags: string[]) => void
 }
 
+// Tag chips with a picker for presets and custom tags.
 export function TagEditor({ clientId, initialTags, onUpdate }: TagEditorProps) {
   const [tags, setTags] = useState<string[]>(initialTags)
   const [input, setInput] = useState('')
@@ -27,6 +30,7 @@ export function TagEditor({ clientId, initialTags, onUpdate }: TagEditorProps) {
     (!input || t.toLowerCase().includes(input.toLowerCase()))
   )
 
+  // Adds one tag if it is not already on the client.
   async function addTag(tag: string) {
     const trimmed = tag.trim()
     if (!trimmed || tags.includes(trimmed)) return
@@ -34,10 +38,12 @@ export function TagEditor({ clientId, initialTags, onUpdate }: TagEditorProps) {
     setInput('')
   }
 
+  // Removes a tag from the client list.
   async function removeTag(tag: string) {
     await saveTags(tags.filter(t => t !== tag))
   }
 
+  // Writes the full tag list to the server.
   async function saveTags(newTags: string[]) {
     setSaving(true)
     setError('')
@@ -69,6 +75,7 @@ export function TagEditor({ clientId, initialTags, onUpdate }: TagEditorProps) {
     'First-time Filer': 'bg-green-50 text-green-700 border-green-200',
   }
 
+  // Picks badge colors for known tag names.
   function tagClass(tag: string) {
     return TAG_COLORS[tag] ?? 'bg-gray-100 text-gray-600 border-gray-200'
   }

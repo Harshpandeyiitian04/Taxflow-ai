@@ -1,5 +1,16 @@
+// Public API for token-based client document upload and portal info.
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { queryRpcBoolean, sql } from '@/lib/db/sql'
+import {
+  documentTypeExistsForClient,
+  finishDocumentExtraction,
+  incrementExtractionCount,
+  insertProcessingDocument,
+  markClientReceived,
+  markDocumentFailed,
+  setDocumentStoragePath,
+} from '@/lib/db/queries'
+import { uploadDocumentObject } from '@/lib/storage/documents'
 import { getExtractionModel, isGeminiConfigured } from '@/lib/gemini'
 import { FORM16_SYSTEM_PROMPT, FORM16_USER_PROMPT } from '@/lib/prompts/form16'
 import { BANK_STATEMENT_SYSTEM_PROMPT, BANK_STATEMENT_USER_PROMPT } from '@/lib/prompts/bank-statement'
@@ -31,6 +42,7 @@ const UPLOAD_PROMPTS: Record<string, { system: string; user: string }> = {
   capital_gains: { system: CAPITAL_GAINS_SYSTEM_PROMPT, user: CAPITAL_GAINS_USER_PROMPT },
 }
 
+// Stores an upload, runs extraction, and notifies the CA firm.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
@@ -84,8 +96,8 @@ export async function POST(
     )
   }
 
-  const admin = createAdminClient()
-  const claimed = await claimUploadSlot(admin, token, MAX_UPLOADS_PER_TOKEN)
+  const query = sql()
+  const claimed = await claimUploadSlot(query, token, MAX_UPLOADS_PER_TOKEN)
   if (!claimed.ok) {
     if (claimed.status === 503) logError('claim_upload_slot_failed', {})
     return NextResponse.json({ error: claimed.error }, { status: claimed.status })
@@ -94,35 +106,32 @@ export async function POST(
   const clientId = claimed.slot.client_id
   const caFirmId = claimed.slot.ca_firm_id
 
-  const { data: client } = await admin
-    .from('clients')
-    .select('id')
-    .eq('id', clientId)
-    .eq('ca_firm_id', caFirmId)
-    .maybeSingle()
+  const clientRows = await query`
+    select id
+      from public.clients
+     where id = ${clientId}::uuid
+       and ca_firm_id = ${caFirmId}::uuid
+     limit 1
+  `
 
-  if (!client) {
+  if (clientRows.length === 0) {
     return NextResponse.json({ error: 'Upload link is no longer valid' }, { status: 404 })
   }
 
-  const { data: existingDocument } = await admin
-    .from('documents')
-    .select('id')
-    .eq('client_id', clientId)
-    .eq('type', docType)
-    .limit(1)
-    .maybeSingle()
-
-  if (existingDocument) {
+  if (await documentTypeExistsForClient(clientId, docType)) {
     return NextResponse.json({ error: 'This document type has already been uploaded' }, { status: 409 })
   }
 
-  const { data: allowed, error: quotaError } = await admin.rpc('consume_extraction', {
-    p_firm: caFirmId,
-    p_limit: FAIR_USE_DAILY_EXTRACTIONS,
-  })
-  if (quotaError) {
-    logError('quota_rpc_failed', { message: quotaError.message })
+  let allowed: boolean
+  try {
+    allowed = await queryRpcBoolean(query, 'consume_extraction', {
+      p_firm: caFirmId,
+      p_limit: FAIR_USE_DAILY_EXTRACTIONS,
+    })
+  } catch (quotaError: unknown) {
+    logError('quota_rpc_failed', {
+      message: quotaError instanceof Error ? quotaError.message : 'unknown',
+    })
     return NextResponse.json({ error: 'Could not check usage limits' }, { status: 503 })
   }
   if (!allowed) {
@@ -134,42 +143,41 @@ export async function POST(
     )
   }
 
-  const { data: docRow, error: docInsertError } = await admin
-    .from('documents')
-    .insert({
-      client_id: clientId,
-      ca_firm_id: caFirmId,
+  let documentId: string
+  try {
+    documentId = await insertProcessingDocument({
+      clientId,
+      firmId: caFirmId,
       type: docType,
-      storage_path: null,
-      original_filename: file.name,
-      file_size_bytes: file.size,
-      extracted_data: null,
-      extraction_status: 'processing',
+      originalFilename: file.name,
+      fileSizeBytes: file.size,
     })
-    .select('id')
-    .single()
-
-  if (docInsertError || !docRow) {
-    logError('document_insert_failed', { message: docInsertError?.message })
+  } catch (docInsertError: unknown) {
+    logError('document_insert_failed', {
+      message: docInsertError instanceof Error ? docInsertError.message : 'unknown',
+    })
     return NextResponse.json({ error: 'Could not save the uploaded document' }, { status: 500 })
   }
 
   const ext = file.name.split('.').pop() ?? 'pdf'
   const storagePath = `${caFirmId}/${clientId}/${docType}-${Date.now()}.${ext}`
-  const { error: storageError } = await admin.storage
-    .from('documents')
-    .upload(storagePath, arrayBuffer, { contentType: magic.mime, upsert: false })
-
-  if (storageError) {
-    logWarn('storage_upload_failed', { message: storageError.message })
-    await admin
-      .from('documents')
-      .update({ extraction_status: 'failed', extraction_error: 'File storage failed' })
-      .eq('id', docRow.id)
+  try {
+    await uploadDocumentObject({
+      firmId: caFirmId,
+      clientId,
+      key: storagePath,
+      body: Buffer.from(arrayBuffer),
+      contentType: magic.mime,
+    })
+  } catch (storageError: unknown) {
+    logWarn('storage_upload_failed', {
+      message: storageError instanceof Error ? storageError.message : 'unknown',
+    })
+    await markDocumentFailed(documentId, 'File storage failed')
     return NextResponse.json({ error: 'Could not store the uploaded file' }, { status: 500 })
   }
 
-  await admin.from('documents').update({ storage_path: storagePath }).eq('id', docRow.id)
+  await setDocumentStoragePath(documentId, storagePath)
 
   let extractedData: Record<string, unknown> | null = null
   let extractionStatus: 'completed' | 'failed' = 'failed'
@@ -198,32 +206,31 @@ export async function POST(
     extractionError = 'Document extraction failed'
   }
 
-  await admin
-    .from('documents')
-    .update({
-      extracted_data: extractedData,
-      extraction_status: extractionStatus,
-      extraction_error: extractionError,
-    })
-    .eq('id', docRow.id)
+  await finishDocumentExtraction(documentId, {
+    extractedData,
+    status: extractionStatus,
+    error: extractionError,
+  })
 
-  await admin
-    .from('clients')
-    .update({ status: 'received' })
-    .eq('id', clientId)
-    .eq('ca_firm_id', caFirmId)
+  await markClientReceived(clientId, caFirmId)
 
-  const { data: caFirmData } = await admin
-    .from('ca_firms')
-    .select('email, firm_name, owner_name')
-    .eq('id', caFirmId)
-    .single()
+  const caFirmRows = await query`
+    select email, firm_name, owner_name
+      from public.ca_firms
+     where id = ${caFirmId}::uuid
+     limit 1
+  `
+  const caFirmData = caFirmRows[0] as
+    | { email: string; firm_name: string | null; owner_name: string | null }
+    | undefined
 
-  const { data: clientData } = await admin
-    .from('clients')
-    .select('name')
-    .eq('id', clientId)
-    .single()
+  const clientRowsForName = await query`
+    select name
+      from public.clients
+     where id = ${clientId}::uuid
+     limit 1
+  `
+  const clientData = clientRowsForName[0] as { name: string } | undefined
 
   if (caFirmData && clientData) {
     const clientDetailUrl = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/clients/${clientId}`
@@ -238,7 +245,7 @@ export async function POST(
   }
 
   if (extractionStatus === 'completed') {
-    await admin.rpc('increment_extractions_used', { p_firm: caFirmId })
+    await incrementExtractionCount(caFirmId)
   }
 
   return NextResponse.json({
@@ -250,31 +257,50 @@ export async function POST(
   })
 }
 
+// Returns portal details and which document types are already uploaded.
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params
-  const admin = createAdminClient()
+  const query = sql()
 
-  const { data, error } = await admin
-    .from('upload_tokens')
-    .select(`
-      token,
-      expires_at,
-      upload_count,
-      used,
-      client:clients(
-        id,
-        name,
-        assessment_year,
-        ca_firm:ca_firms(firm_name, owner_name, phone)
-      )
-    `)
-    .eq('token', token)
-    .single()
+  let data:
+    | {
+        expires_at: Date | string
+        upload_count: number | null
+        used: boolean
+        client_id: string
+        client_name: string | null
+        assessment_year: string | null
+        firm_name: string | null
+        owner_name: string | null
+        firm_phone: string | null
+      }
+    | undefined
+  try {
+    const rows = await query`
+      select t.expires_at,
+             t.upload_count,
+             t.used,
+             c.id::text as client_id,
+             c.name as client_name,
+             c.assessment_year,
+             f.firm_name,
+             f.owner_name,
+             f.phone as firm_phone
+        from public.upload_tokens t
+        join public.clients c on c.id = t.client_id
+        join public.ca_firms f on f.id = c.ca_firm_id
+       where t.token = ${token}
+       limit 1
+    `
+    data = rows[0] as typeof data
+  } catch {
+    data = undefined
+  }
 
-  if (error || !data) {
+  if (!data) {
     return NextResponse.json({ error: 'Link not found' }, { status: 404 })
   }
 
@@ -292,25 +318,22 @@ export async function GET(
     )
   }
 
-  const client = Array.isArray(data.client) ? data.client[0] : data.client
-  const firm = client?.ca_firm
-  const firmObj = Array.isArray(firm) ? firm[0] : firm
-  const fullName = typeof client?.name === 'string' ? client.name : 'Client'
+  const fullName = typeof data.client_name === 'string' ? data.client_name : 'Client'
   const clientFirstName = fullName.trim().split(/\s+/)[0] || 'Client'
-  const firmDisplayName =
-    firmObj?.firm_name || firmObj?.owner_name || 'Your CA'
+  const firmDisplayName = data.firm_name || data.owner_name || 'Your CA'
 
-  const { data: uploadedDocuments } = await admin
-    .from('documents')
-    .select('type')
-    .eq('client_id', client.id)
+  const uploadedDocuments = await query`
+    select type
+      from public.documents
+     where client_id = ${data.client_id}::uuid
+  `
 
   return NextResponse.json({
     valid: true,
     firmDisplayName,
-    caPhone: firmObj?.phone ?? null,
+    caPhone: data.firm_phone ?? null,
     clientFirstName,
-    assessmentYear: client?.assessment_year ?? null,
-    uploadedTypes: (uploadedDocuments ?? []).map(document => document.type),
+    assessmentYear: data.assessment_year ?? null,
+    uploadedTypes: (uploadedDocuments as { type: string }[]).map(document => document.type),
   })
 }

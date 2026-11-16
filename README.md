@@ -16,31 +16,27 @@ Exports are provided as CSV. Verify against your software's import template befo
 ## Requirements
 
 - Node.js 20.9 or newer
-- A Supabase project
+- A Neon project with Neon Auth and Object Storage enabled
 - A Google AI Studio API key for Gemini
 - A Resend API key for email notifications (optional; requires verified From domain)
 - A WATI account for automated WhatsApp reminders (optional)
 - A PostHog project key for event analytics (optional; consent-gated)
 
-## Supabase setup
+## Neon setup
 
-For a new Supabase project, open the SQL editor and run [`supabase/schema.sql`](supabase/schema.sql). Then apply the hardening migration [`supabase/migrations/20261110_hardening.sql`](supabase/migrations/20261110_hardening.sql) (fair-use RPCs, upload slot claims, cron hardening).
+TaxFlow AI runs on Neon: Postgres (`DATABASE_URL`), Neon Auth (Managed Better Auth magic links) and S3-compatible object storage for documents. Supabase has been removed; the legacy `supabase/` folder is kept for reference only.
 
-In Supabase Authentication settings, enable email magic links and add `http://localhost:3000/auth/callback**` plus `https://<your-domain>/auth/callback**` to the redirect allowlist. Because this app uses server-side PKCE, update both the **Magic Link** and **Confirm signup** email templates to send the token hash directly to the callback:
+Apply [`neon/migrations/001_app_schema.sql`](neon/migrations/001_app_schema.sql) to the Neon database (app tables, fair-use/upload RPCs, analytics view). Enable **Magic Link** for the Neon Auth branch and add `http://localhost:3000` plus your production origin as trusted domains (`neon neon-auth domain add <origin>`). The app sends users back to `/auth/callback`, which provisions their firm.
 
-```html
-<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email">Sign in to TaxFlow AI</a>
-```
-
-Never expose the service-role key to browser code.
+Never expose `DATABASE_URL` or the storage credentials to browser code.
 
 ## Environment
 
 Copy `.env.example` to `.env.local` and fill in:
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `DATABASE_URL`, `DATABASE_URL_UNPOOLED`
+- `NEON_AUTH_BASE_URL`, `NEON_AUTH_COOKIE_SECRET`, `NEON_AUTH_JWKS_URL`
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ENDPOINT_URL_S3`, `NEON_STORAGE_BUCKET`
 - `GEMINI_API_KEY`
 - `NEXT_PUBLIC_APP_URL`
 - `RESEND_API_KEY` and `RESEND_FROM_EMAIL` if email delivery is enabled (`RESEND_FROM_EMAIL` is required — there is no hardcoded From fallback)
@@ -83,7 +79,7 @@ npm test
 
 ## NEEDS-USER-ACTION
 
-1. Run `supabase/migrations/20261110_hardening.sql` in the Supabase SQL editor.
+1. Apply `neon/migrations/001_app_schema.sql` to the Neon database and set `AWS_ENDPOINT_URL_S3` for object storage.
 2. Configure Vercel Firewall: path `/api/upload/*`, **20 requests / minute / IP**.
 3. Set `RESEND_FROM_EMAIL` to a verified domain sender, plus fair-use env vars from `.env.example`.
 4. After staging, review CSP Report-Only violations and switch to enforcing CSP when clean.

@@ -1,5 +1,7 @@
 'use client'
 
+// Tabbed view of extracted tax fields with export options.
+
 import { useEffect, useState } from 'react'
 import { downloadWinmanCSV, downloadKDKCSV } from '@/lib/utils/winman-export'
 import { generateExtractionCSV } from '@/lib/utils/export'
@@ -12,11 +14,13 @@ interface ExtractionResultProps {
 
 type Tab = 'employer' | 'income' | 'deductions' | 'tax' | 'tds' | 'raw'
 
+// Formats a number as Indian rupees for display.
 function formatCurrency(val: unknown): string {
   if (typeof val !== 'number' || !Number.isFinite(val)) return '—'
   return '₹' + val.toLocaleString('en-IN')
 }
 
+// One label and value row in a section.
 function Field({ label, value }: { label: string; value: unknown }) {
   const display = value === null || value === undefined || value === ''
     ? <span className="text-gray-400 italic text-xs">Not found</span>
@@ -32,6 +36,7 @@ function Field({ label, value }: { label: string; value: unknown }) {
   )
 }
 
+// Card wrapper with a title for a group of fields.
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-3">
@@ -43,6 +48,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
+// Turns nested JSON into a flat list of field labels and values.
 function flattenData(value: unknown, path = ''): Array<{ label: string; value: string }> {
   if (Array.isArray(value)) {
     return value.flatMap((item, index) => flattenData(item, `${path}[${index + 1}]`))
@@ -58,6 +64,7 @@ function flattenData(value: unknown, path = ''): Array<{ label: string; value: s
     : []
 }
 
+// Main UI for reviewing extraction output and downloading exports.
 export function ExtractionResult({ data, filename, onReset }: ExtractionResultProps) {
   const [activeTab, setActiveTab] = useState<Tab>('employer')
   const [showExportMenu, setShowExportMenu] = useState(false)
@@ -104,7 +111,6 @@ export function ExtractionResult({ data, filename, onReset }: ExtractionResultPr
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -171,7 +177,6 @@ export function ExtractionResult({ data, filename, onReset }: ExtractionResultPr
         </button>
       </div>
 
-      {/* Warnings */}
       {warnings.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
           <p className="text-sm font-semibold text-amber-800 mb-1">⚠ Warnings</p>
@@ -183,7 +188,6 @@ export function ExtractionResult({ data, filename, onReset }: ExtractionResultPr
         </div>
       )}
 
-      {/* Quick stats */}
       {isForm16 && <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         {[
           { label: 'Gross salary', value: formatCurrency(inc.gross_salary) },
@@ -198,7 +202,6 @@ export function ExtractionResult({ data, filename, onReset }: ExtractionResultPr
         ))}
       </div>}
 
-      {/* Tabs */}
       {isForm16 && <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
         {tabs.map(t => (
           <button
@@ -215,7 +218,6 @@ export function ExtractionResult({ data, filename, onReset }: ExtractionResultPr
         ))}
       </div>}
 
-      {/* Tab content */}
       {!isForm16 ? (
         <Section title="Extracted fields">
           {genericFields.map(field => (
@@ -328,6 +330,7 @@ export function ExtractionResult({ data, filename, onReset }: ExtractionResultPr
   )
 }
 
+// Safely treats a value as an object map for nested reads.
 function getRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>

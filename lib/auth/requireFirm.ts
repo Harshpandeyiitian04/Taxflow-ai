@@ -1,27 +1,36 @@
 import 'server-only'
 
 import { NextResponse } from 'next/server'
-import type { User } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/server'
-import { getCurrentFirm } from '@/lib/supabase/queries'
+import { auth } from '@/lib/auth/server'
+import { getCurrentFirm } from '@/lib/db/queries'
 import type { CAFirm } from '@/types'
 
-export type RequireFirmSuccess = { ok: true; user: User; firm: CAFirm }
+// Ensures an API call comes from a logged-in CA firm user.
+
+export type AuthUser = { id: string; email?: string | null; name?: string | null }
+
+export type RequireFirmSuccess = { ok: true; user: AuthUser; firm: CAFirm }
 export type RequireFirmFailure = { ok: false; response: NextResponse }
 export type RequireFirmResult = RequireFirmSuccess | RequireFirmFailure
 
-/** Authenticate the caller and resolve their CA firm, or return a JSON error response. */
+// Loads the signed-in user and their firm, or sends an error response.
 export async function requireFirm(): Promise<RequireFirmResult> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
+  const { data: session } = await auth.getSession()
+  const sessionUser = session?.user
+  if (!sessionUser) {
     return {
       ok: false,
       response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
     }
   }
 
-  const firm = await getCurrentFirm()
+  const user: AuthUser = {
+    id: sessionUser.id,
+    email: sessionUser.email,
+    name: sessionUser.name,
+  }
+
+  const firm = await getCurrentFirm(user.id)
   if (!firm) {
     return {
       ok: false,

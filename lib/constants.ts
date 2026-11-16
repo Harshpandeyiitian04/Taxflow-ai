@@ -1,3 +1,6 @@
+// Shared limits for uploads, clients, and AI usage.
+
+// Reads a positive whole number from the environment or uses a default.
 function intEnv(name: string, fallback: number): number {
   const raw = process.env[name]
   const n = raw ? Number(raw) : NaN

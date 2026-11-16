@@ -1,5 +1,6 @@
 'use client'
 
+// Client-facing page where taxpayers upload documents via a secure link.
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { MAX_UPLOAD_MB } from '@/lib/constants'
@@ -22,6 +23,7 @@ const DOC_TYPES = [
   { value: 'capital_gains', label: 'Capital Gains Statement', required: false },
 ]
 
+// Loads portal info and handles multi-document uploads for one client.
 export default function UploadPage() {
   const { token } = useParams<{ token: string }>()
   const [state, setState] = useState<PageState>('loading')
@@ -51,6 +53,7 @@ export default function UploadPage() {
       .catch(() => { setErrorMsg('Could not load this page. Check your link.'); setState('error') })
   }, [token])
 
+  // Sends the selected file to the upload API for this token.
   async function handleUpload() {
     if (!selectedFile) return
     if (selectedFile.size > MAX_UPLOAD_MB * 1024 * 1024) {
@@ -78,6 +81,7 @@ export default function UploadPage() {
     }
   }
 
+  // Marks the flow complete after required documents are uploaded.
   function handleDone() { setState('success') }
 
   const firmName = portal?.firmDisplayName || 'Your CA'

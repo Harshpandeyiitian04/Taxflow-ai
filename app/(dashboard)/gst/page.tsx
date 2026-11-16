@@ -1,24 +1,22 @@
-import { createClient } from '@/lib/supabase/server'
+// Server page showing GST return deadlines for firm clients.
 import { redirect } from 'next/navigation'
-import { getCurrentFirm } from '@/lib/supabase/queries'
+import { auth } from '@/lib/auth/server'
+import { getClientsWithoutGst, getCurrentFirm, getGstClients } from '@/lib/db/queries'
 import { getGSTDeadlines, normalizeWhatsAppPhone } from '@/lib/gst'
 import Link from 'next/link'
 
+export const dynamic = 'force-dynamic'
+
+// Renders GST due dates grouped by urgency for the signed-in firm.
 export default async function GSTCalendarPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: session } = await auth.getSession()
+  const user = session?.user
   if (!user) redirect('/login')
 
-  const firm = await getCurrentFirm()
+  const firm = await getCurrentFirm(user.id)
   if (!firm) redirect('/login')
 
-  const { data: clients } = await supabase
-    .from('clients')
-    .select('id, name, gstin, gst_scheme, phone')
-    .eq('ca_firm_id', firm.id)
-    .not('gstin', 'is', null)
-
-  const gstClients = clients ?? []
+  const gstClients = await getGstClients(firm.id)
   const deadlines = getGSTDeadlines(gstClients)
 
   const overdue = deadlines.filter(d => d.daysLeft < 0)
@@ -26,11 +24,7 @@ export default async function GSTCalendarPage() {
   const upcoming = deadlines.filter(d => d.daysLeft > 3 && d.daysLeft <= 10)
   const future = deadlines.filter(d => d.daysLeft > 10)
 
-  const clientsWithoutGST = (await supabase
-    .from('clients')
-    .select('id, name')
-    .eq('ca_firm_id', firm.id)
-    .is('gstin', null)).data ?? []
+  const clientsWithoutGST = await getClientsWithoutGst(firm.id)
 
   return (
     <div className="min-h-screen bg-gray-50">

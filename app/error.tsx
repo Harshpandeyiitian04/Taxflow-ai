@@ -1,5 +1,6 @@
 'use client'
 
+// Client-side error boundary with retry and dashboard links.
 export default function Error({
   reset,
 }: {

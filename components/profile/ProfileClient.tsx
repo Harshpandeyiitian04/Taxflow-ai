@@ -1,11 +1,14 @@
 'use client'
 
+// Page to view and edit the CA firm profile and delete the account.
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { CAFirm } from '@/types'
 import { useEscapeClose } from '@/lib/hooks/useEscapeClose'
 
+// Firm profile form with save and account deletion.
 export function ProfileClient({ firm, userEmail }: { firm: CAFirm; userEmail: string }) {
   const router = useRouter()
   const [form, setForm] = useState({
@@ -24,6 +27,7 @@ export function ProfileClient({ firm, userEmail }: { firm: CAFirm; userEmail: st
 
   useEscapeClose(deleteOpen, () => { if (!deleting) setDeleteOpen(false) }, !deleting)
 
+  // Sends profile field changes to the server.
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true); setError('')
@@ -40,6 +44,7 @@ export function ProfileClient({ firm, userEmail }: { firm: CAFirm; userEmail: st
     setSaving(false)
   }
 
+  // Permanently removes the firm account after typing DELETE.
   async function handleDeleteAccount() {
     if (deleteConfirm !== 'DELETE') {
       setDeleteError('Type DELETE exactly to confirm.')

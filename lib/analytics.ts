@@ -1,3 +1,6 @@
+// Sends anonymous usage events to PostHog when configured.
+
+// Records one server-side product event for analytics.
 export async function trackServerEvent(
   distinctId: string,
   event: string,
@@ -20,6 +23,5 @@ export async function trackServerEvent(
       signal: AbortSignal.timeout(5000),
     })
   } catch {
-    // Analytics must never break the product path
   }
 }

@@ -1,5 +1,7 @@
 'use client'
 
+// Dialog to copy or WhatsApp a client document upload link.
+
 import { useEffect, useRef, useState } from 'react'
 import { useEscapeClose } from '@/lib/hooks/useEscapeClose'
 import { normalizeWhatsAppPhone } from '@/lib/gst'
@@ -12,6 +14,7 @@ interface UploadLinkModalProps {
   onClose: () => void
 }
 
+// Shows the upload URL with copy and WhatsApp share actions.
 export function UploadLinkModal({ open, clientName, uploadUrl, phone, onClose }: UploadLinkModalProps) {
   const [copied, setCopied] = useState(false)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -23,6 +26,7 @@ export function UploadLinkModal({ open, clientName, uploadUrl, phone, onClose }:
 
   if (!open) return null
 
+  // Copies the upload URL to the clipboard.
   function copyLink() {
     void navigator.clipboard.writeText(uploadUrl)
     setCopied(true)

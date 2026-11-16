@@ -1,5 +1,7 @@
 'use client'
 
+// Full client page with status, GST, tags, notes, and documents.
+
 import { useState } from 'react'
 import Link from 'next/link'
 import { ExtractionResult } from '@/components/extraction/ExtractionResult'
@@ -40,10 +42,10 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 
 const STATUS_STEPS: ClientStatus[] = ['pending', 'received', 'processing', 'done', 'filed']
 
+// Client detail screen with documents and inline edits.
 export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: Props) {
   const [client, setClient] = useState(initialClient)
   const [expandedDoc, setExpandedDoc] = useState<string | null>(
-    // Auto-expand the first completed document
     initialClient.documents.find(d => d.extraction_status === 'completed')?.id ?? null
   )
   const [showLinkModal, setShowLinkModal] = useState(false)
@@ -56,6 +58,7 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
   const [statusError, setStatusError] = useState('')
   const [detailsError, setDetailsError] = useState('')
 
+  // PATCHes arbitrary client fields and merges the response.
   async function saveClientFields(updates: Partial<Pick<ClientFull,
     'notes' | 'tags' | 'fee_amount' | 'fee_paid' | 'gstin' | 'gst_scheme'>>) {
     setSavingDetails(true)
@@ -79,15 +82,18 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
     }
   }
 
+  // Saves fee amount and paid checkbox together.
   async function saveFee() {
     await saveClientFields({ fee_amount: fee ? Number(fee) : null, fee_paid: feePaid })
   }
 
+  // Saves GSTIN and filing scheme from the GST form.
   async function saveGSTDetails(event: React.FormEvent) {
     event.preventDefault()
     await saveClientFields({ gstin: gstin.trim() || null, gst_scheme: gstScheme })
   }
 
+  // Updates workflow status on the client record.
   async function updateStatus(newStatus: ClientStatus) {
     if (updatingStatus) return
     setUpdatingStatus(true)
@@ -116,7 +122,6 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navbar */}
       <nav className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-20">
         <div className="flex items-center justify-between max-w-5xl mx-auto">
           <div className="flex items-center gap-2 text-sm">
@@ -129,7 +134,6 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
       </nav>
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-        {/* Client header card */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-5">
           <div className="flex items-start justify-between flex-wrap gap-4">
             <div className="flex items-center gap-4">
@@ -164,7 +168,6 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
             </div>
           </div>
 
-          {/* Status progress bar */}
           <div className="mt-5">
             <div className="flex items-center gap-0">
               {STATUS_STEPS.map((step, idx) => {
@@ -256,7 +259,6 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
 
         </div>
 
-        {/* Documents section */}
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900">
             Documents ({client.documents.length})
@@ -288,7 +290,6 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
 
                 return (
                   <div key={doc.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                    {/* Doc header */}
                     <div
                       className={`flex items-center justify-between px-5 py-4 ${isCompleted ? 'cursor-pointer hover:bg-gray-50' : ''}`}
                       onClick={() => isCompleted && setExpandedDoc(isExpanded ? null : doc.id)}
@@ -328,7 +329,6 @@ export function ClientDetailClient({ client: initialClient, firm, uploadUrl }: P
                       )}
                     </div>
 
-                    {/* Expanded extraction result */}
                     {isExpanded && isCompleted && doc.extracted_data && (
                       <div className="border-t border-gray-100 px-5 py-5">
                         <ExtractionResult

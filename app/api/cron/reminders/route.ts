@@ -1,26 +1,37 @@
+// Scheduled job that sends due client reminders in batches.
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { sql } from '@/lib/db/sql'
 import { sendReminderEmail } from '@/lib/email'
 import { authorizeCron } from '@/lib/auth/cronAuth'
 
-// Called by Vercel Cron once daily (Hobby plan). See vercel.json.
 export const runtime = 'nodejs'
 export const maxDuration = 60
+
+type DueReminder = {
+  id: string
+  type: string
+  message: string
+  client_id: string
+  ca_firm_id: string
+  client: unknown
+}
 
 const BATCH_SIZE = 50
 const TIME_BUDGET_MS = 45_000
 
+// Safely treats a JSON value as a plain object for reminder delivery.
 function getRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
 }
 
+// Processes pending reminders until the time budget is used.
 export async function GET(request: NextRequest) {
   const denied = authorizeCron(request)
   if (denied) return denied
 
-  const admin = createAdminClient()
+  const query = sql()
   const started = Date.now()
   const now = new Date()
 
@@ -29,24 +40,29 @@ export async function GET(request: NextRequest) {
   let processed = 0
 
   while (Date.now() - started < TIME_BUDGET_MS) {
-    const { data: dueReminders, error } = await admin
-      .from('reminders')
-      .select(`
-        id, type, message, client_id, ca_firm_id,
-        client:clients(name, phone, email),
-        ca_firm:ca_firms(email, owner_name, firm_name)
-      `)
-      .eq('status', 'pending')
-      .lte('scheduled_at', now.toISOString())
-      .order('scheduled_at', { ascending: true })
-      .limit(BATCH_SIZE)
-
-    if (error) {
-      console.error('Cron: failed to fetch reminders:', error.message)
+    let dueReminders: DueReminder[]
+    try {
+      const rows = await query`
+        select r.id::text as id,
+               r.type,
+               r.message,
+               r.client_id::text as client_id,
+               r.ca_firm_id::text as ca_firm_id,
+               jsonb_build_object('name', c.name, 'phone', c.phone, 'email', c.email) as client
+          from public.reminders r
+          left join public.clients c on c.id = r.client_id
+         where r.status = 'pending'
+           and r.scheduled_at <= ${now.toISOString()}::timestamptz
+         order by r.scheduled_at asc
+         limit ${BATCH_SIZE}::int
+      `
+      dueReminders = rows as DueReminder[]
+    } catch (err) {
+      console.error('Cron: failed to fetch reminders:', err instanceof Error ? err.message : err)
       return NextResponse.json({ error: 'Failed to fetch reminders' }, { status: 500 })
     }
 
-    if (!dueReminders?.length) break
+    if (!dueReminders.length) break
 
     for (const reminder of dueReminders) {
       if (Date.now() - started >= TIME_BUDGET_MS) break
@@ -78,30 +94,31 @@ export async function GET(request: NextRequest) {
         }
 
         if (!delivered) {
-          await admin
-            .from('reminders')
-            .update({ status: 'failed', failure_reason: failureReason })
-            .eq('id', reminder.id)
+          await query`
+            update public.reminders
+               set status = 'failed', failure_reason = ${failureReason}
+             where id = ${reminder.id}::uuid
+          `
           failed++
           continue
         }
 
-        await admin
-          .from('reminders')
-          .update({
-            status: 'sent',
-            sent_at: now.toISOString(),
-            failure_reason: null,
-          })
-          .eq('id', reminder.id)
+        await query`
+          update public.reminders
+             set status = 'sent',
+                 sent_at = ${now.toISOString()}::timestamptz,
+                 failure_reason = null
+           where id = ${reminder.id}::uuid
+        `
         sent++
       } catch (err) {
         const reason = err instanceof Error ? err.message : 'Delivery failed'
         console.error('Failed to send reminder:', reminder.id, reason)
-        await admin
-          .from('reminders')
-          .update({ status: 'failed', failure_reason: reason.slice(0, 500) })
-          .eq('id', reminder.id)
+        await query`
+          update public.reminders
+             set status = 'failed', failure_reason = ${reason.slice(0, 500)}
+           where id = ${reminder.id}::uuid
+        `
         failed++
       }
     }
@@ -118,6 +135,7 @@ export async function GET(request: NextRequest) {
   })
 }
 
+// Sends a one-off WhatsApp session message through WATI.
 async function sendWATIMessage({ phone, message }: { phone: string; message: string }) {
   const cleanPhone = phone.replace(/\D/g, '')
   const phoneWithCode = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`

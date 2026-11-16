@@ -1,41 +1,29 @@
+import { queryClaimUploadSlot, type SqlQuery } from '@/lib/db/sql'
+
+// Validates one-time client upload links before files are accepted.
+
 export interface ClaimedUploadSlot {
   client_id: string
   ca_firm_id: string
 }
 
-/**
- * Claim a one-time upload token slot via RPC.
- * Extracted for unit testing with a mocked admin client.
- */
+// Tries to reserve one use of an upload link and returns who it belongs to.
 export async function claimUploadSlot(
-  admin: {
-    rpc: (
-      fn: string,
-      args: Record<string, unknown>
-    ) => PromiseLike<{ data: unknown; error: { message?: string } | null }>
-  },
+  query: SqlQuery,
   token: string,
   maxUses: number
 ): Promise<
   | { ok: true; slot: ClaimedUploadSlot }
   | { ok: false; status: number; error: string }
 > {
-  const { data: claimed, error } = await admin.rpc('claim_upload_slot', {
-    p_token: token,
-    p_max: maxUses,
-  })
-
-  if (error) {
+  let slot: ClaimedUploadSlot | null
+  try {
+    slot = await queryClaimUploadSlot(query, token, maxUses)
+  } catch {
     return { ok: false, status: 503, error: 'Could not validate upload link' }
   }
 
-  const slot = Array.isArray(claimed) ? claimed[0] : claimed
-  if (
-    !slot ||
-    typeof slot !== 'object' ||
-    typeof (slot as ClaimedUploadSlot).client_id !== 'string' ||
-    typeof (slot as ClaimedUploadSlot).ca_firm_id !== 'string'
-  ) {
+  if (!slot) {
     return {
       ok: false,
       status: 400,
@@ -46,8 +34,8 @@ export async function claimUploadSlot(
   return {
     ok: true,
     slot: {
-      client_id: (slot as ClaimedUploadSlot).client_id,
-      ca_firm_id: (slot as ClaimedUploadSlot).ca_firm_id,
+      client_id: slot.client_id,
+      ca_firm_id: slot.ca_firm_id,
     },
   }
 }

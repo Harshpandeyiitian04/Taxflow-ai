@@ -1,16 +1,16 @@
+// API to list clients and create new ones with upload links.
 import { randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { sql } from '@/lib/db/sql'
+import { countClients, getClientsWithDocuments, insertClient } from '@/lib/db/queries'
 import { requireFirm } from '@/lib/auth/requireFirm'
 import { trackServerEvent } from '@/lib/analytics'
 import { MAX_CLIENTS_PER_FIRM } from '@/lib/constants'
 import { defaultAssessmentYear } from '@/lib/dates'
 
-const CLIENT_LIST_SELECT =
-  'id, ca_firm_id, name, pan, phone, email, assessment_year, status, tags, notes, gstin, gst_scheme, fee_amount, fee_paid, last_reminder_sent_at, reminder_count, created_at, updated_at, documents(id, type, extraction_status, created_at)'
+const CLIENT_LIST_LIMIT = 500
 
-// POST /api/clients — create a new client + generate upload token
+// Adds a client record and returns a shareable upload URL.
 export async function POST(request: NextRequest) {
   const auth = await requireFirm()
   if (!auth.ok) return auth.response
@@ -26,59 +26,48 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Client name is required' }, { status: 400 })
   }
 
-  const admin = createAdminClient()
-
-  const { count: clientCount, error: countError } = await admin
-    .from('clients')
-    .select('id', { count: 'exact', head: true })
-    .eq('ca_firm_id', firm.id)
-
-  if (countError) {
-    console.error('Count clients error:', countError.message)
+  let clientCount: number
+  try {
+    clientCount = await countClients(firm.id)
+  } catch (err: unknown) {
+    console.error('Count clients error:', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: 'Failed to create client' }, { status: 500 })
   }
-  if ((clientCount ?? 0) >= MAX_CLIENTS_PER_FIRM) {
+  if (clientCount >= MAX_CLIENTS_PER_FIRM) {
     return NextResponse.json(
       { error: `Client limit of ${MAX_CLIENTS_PER_FIRM} reached for this firm.` },
       { status: 429 }
     )
   }
 
-  const { data: client, error: clientError } = await admin
-    .from('clients')
-    .insert({
-      ca_firm_id: firm.id,
+  let client
+  try {
+    client = await insertClient(firm.id, {
       name: name.trim(),
       pan: pan?.trim().toUpperCase() || null,
       phone: phone?.trim() || null,
       email: email?.trim() || null,
       assessment_year: ay,
-      status: 'pending',
     })
-    .select()
-    .single()
-
-  if (clientError) {
-    console.error('Create client error:', clientError.message)
+  } catch (err: unknown) {
+    console.error('Create client error:', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: 'Failed to create client' }, { status: 500 })
   }
 
-  const { data: tokenRow, error: tokenError } = await admin
-    .from('upload_tokens')
-    .insert({
-      client_id: client.id,
-      ca_firm_id: firm.id,
-      token: randomBytes(32).toString('hex'),
-    })
-    .select('token')
-    .single()
-
-  if (tokenError) {
-    console.error('Token generation error:', tokenError.message)
+  let token: string
+  try {
+    const tokenRows = await sql()`
+      insert into public.upload_tokens (client_id, ca_firm_id, token)
+      values (${client.id}::uuid, ${firm.id}::uuid, ${randomBytes(32).toString('hex')})
+      returning token
+    `
+    token = (tokenRows[0] as { token: string }).token
+  } catch (err: unknown) {
+    console.error('Token generation error:', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: 'Failed to generate upload link' }, { status: 500 })
   }
 
-  const uploadUrl = `${process.env.NEXT_PUBLIC_APP_URL}/upload/${tokenRow.token}`
+  const uploadUrl = `${process.env.NEXT_PUBLIC_APP_URL}/upload/${token}`
 
   await trackServerEvent(user.id, 'client_added', {
     has_pan: !!pan?.trim(),
@@ -93,29 +82,27 @@ export async function POST(request: NextRequest) {
     success: true,
     client,
     uploadUrl,
-    token: tokenRow.token,
+    token,
   })
 }
 
-// GET /api/clients — list clients for current firm (no extracted_data)
+// Lists clients for the signed-in firm up to a fixed cap.
 export async function GET() {
   const auth = await requireFirm()
   if (!auth.ok) return auth.response
   const { firm } = auth
 
-  const supabase = await createClient()
-  const { data, error, count } = await supabase
-    .from('clients')
-    .select(CLIENT_LIST_SELECT, { count: 'exact' })
-    .eq('ca_firm_id', firm.id)
-    .order('created_at', { ascending: false })
-    .range(0, 499)
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  return NextResponse.json({
-    clients: data,
-    total: count ?? data?.length ?? 0,
-    truncated: (count ?? 0) > 500,
-  })
+  try {
+    const { clients, total } = await getClientsWithDocuments(firm.id, CLIENT_LIST_LIMIT)
+    return NextResponse.json({
+      clients,
+      total,
+      truncated: total > CLIENT_LIST_LIMIT,
+    })
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Failed to load clients' },
+      { status: 500 }
+    )
+  }
 }

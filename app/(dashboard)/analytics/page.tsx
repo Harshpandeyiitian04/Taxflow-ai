@@ -1,41 +1,37 @@
-import { createClient } from '@/lib/supabase/server'
+// Server page with firm filing stats and workload insights.
 import { redirect } from 'next/navigation'
-import { getCurrentFirm } from '@/lib/supabase/queries'
+import { auth } from '@/lib/auth/server'
+import {
+  getAnalyticsStats,
+  getCurrentFirm,
+  getRecentFiledClients,
+  getStaleClients,
+} from '@/lib/db/queries'
 import { defaultAssessmentYear, itrDeadlineCopy } from '@/lib/dates'
 import Link from 'next/link'
 
+export const dynamic = 'force-dynamic'
+
+// Builds analytics charts and lists for the signed-in CA firm.
 export default async function AnalyticsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: session } = await auth.getSession()
+  const user = session?.user
   if (!user) redirect('/login')
 
-  const firm = await getCurrentFirm()
+  const firm = await getCurrentFirm(user.id)
   if (!firm) redirect('/login')
 
   const today = new Date()
   const assessmentYear = defaultAssessmentYear(today)
   const itr = itrDeadlineCopy(today)
 
-  // Overall stats
-  const { data: stats } = await supabase
-    .from('ca_analytics')
-    .select('*')
-    .eq('ca_firm_id', firm.id)
-    .single()
+  const stats = await getAnalyticsStats(firm.id)
 
-  // Recent filing activity (last 14 days)
   const twoWeeksAgo = new Date(today)
   twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
 
-  const { data: recentFiled } = await supabase
-    .from('clients')
-    .select('updated_at')
-    .eq('ca_firm_id', firm.id)
-    .eq('status', 'filed')
-    .gte('updated_at', twoWeeksAgo.toISOString())
-    .order('updated_at', { ascending: false })
+  const recentFiled = await getRecentFiledClients(firm.id, twoWeeksAgo)
 
-  // Build daily filing counts for last 14 days
   const dailyCounts: Record<string, number> = {}
   for (let i = 13; i >= 0; i--) {
     const d = new Date(today)
@@ -50,20 +46,11 @@ export default async function AnalyticsPage() {
   const dailyData = Object.entries(dailyCounts)
   const maxDaily = Math.max(...dailyData.map(([, v]) => v), 1)
 
-  // Clients needing attention (pending for 7+ days)
   const sevenDaysAgo = new Date(today)
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-  const { data: staleClients } = await supabase
-    .from('clients')
-    .select('id, name, pan, status, updated_at')
-    .eq('ca_firm_id', firm.id)
-    .in('status', ['pending', 'received'])
-    .lte('updated_at', sevenDaysAgo.toISOString())
-    .order('updated_at', { ascending: true })
-    .limit(10)
+  const staleClients = await getStaleClients(firm.id, sevenDaysAgo, 10)
 
-  // Original July 31 checkpoint for current AY; statutory deadlines may be extended.
   const daysLeft = itr.daysLeft
   const dailyNeeded = daysLeft > 0 && stats
     ? Math.ceil((Number(stats.total_clients) - Number(stats.filed_count)) / daysLeft)
@@ -89,7 +76,6 @@ export default async function AnalyticsPage() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-        {/* ITR Deadline banner */}
         {!itr.passed && daysLeft > 0 && daysLeft <= 45 && (
           <div className={`rounded-2xl px-6 py-4 flex items-center justify-between ${
             daysLeft <= 7 ? 'bg-red-50 border border-red-200'
@@ -112,7 +98,6 @@ export default async function AnalyticsPage() {
           </div>
         )}
 
-        {/* Filing progress */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900">Filing progress</h2>
@@ -143,9 +128,7 @@ export default async function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Revenue + activity row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {/* Revenue */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <h2 className="font-bold text-gray-900 mb-4">Revenue this season</h2>
             <div className="text-3xl font-bold text-green-600 mb-1">
@@ -172,7 +155,6 @@ export default async function AnalyticsPage() {
             </p>
           </div>
 
-          {/* Daily filing chart */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <h2 className="font-bold text-gray-900 mb-4">Daily filings (last 14 days)</h2>
             <div className="flex items-end gap-1 h-24">
@@ -197,7 +179,6 @@ export default async function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Clients needing attention */}
         {staleClients && staleClients.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <h2 className="font-bold text-gray-900 mb-1">Clients needing attention</h2>

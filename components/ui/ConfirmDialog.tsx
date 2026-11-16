@@ -1,5 +1,7 @@
 'use client'
 
+// Modal that asks the user to confirm or cancel an action.
+
 import { useEffect, useRef } from 'react'
 
 interface ConfirmDialogProps {
@@ -14,6 +16,7 @@ interface ConfirmDialogProps {
   onCancel: () => void
 }
 
+// Pop-up with confirm and cancel buttons.
 export function ConfirmDialog({
   open,
   title,

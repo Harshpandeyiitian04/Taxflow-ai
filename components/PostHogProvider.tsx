@@ -1,5 +1,7 @@
 'use client'
 
+// Loads analytics only after consent and skips sensitive pages.
+
 import posthog from 'posthog-js'
 import { PostHogProvider as PHProvider } from 'posthog-js/react'
 import { usePathname } from 'next/navigation'
@@ -22,6 +24,7 @@ const SENSITIVE_PREFIXES = [
   '/clients',
 ]
 
+// True when the URL should not send analytics events.
 function isSensitivePath(pathname: string | null): boolean {
   if (!pathname) return true
   return SENSITIVE_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`))
@@ -29,6 +32,7 @@ function isSensitivePath(pathname: string | null): boolean {
 
 let posthogBootstrapped = false
 
+// Starts or stops PostHog based on the user's consent choice.
 function ensurePostHog(key: string, host: string, consent: AnalyticsConsentValue) {
   if (consent !== 'granted') {
     posthog.opt_out_capturing()
@@ -55,6 +59,7 @@ function ensurePostHog(key: string, host: string, consent: AnalyticsConsentValue
   return true
 }
 
+// Wraps the app with PostHog and the consent banner.
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY
   const host = process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com'
@@ -82,6 +87,7 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
     posthog.capture('$pageview', { path: pathname })
   }, [pathname, consent, key, host])
 
+  // Applies accept or decline from the consent banner.
   function handleDecision(value: AnalyticsConsentValue) {
     if (!key) return
     readyRef.current = ensurePostHog(key, host, value)

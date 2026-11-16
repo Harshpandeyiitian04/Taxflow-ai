@@ -1,4 +1,6 @@
-/** Escape text for safe interpolation into HTML email templates. */
+// Escapes text so it is safe to show inside HTML emails.
+
+// Turns special characters into safe HTML text.
 export function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')

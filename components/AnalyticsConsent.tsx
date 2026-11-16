@@ -1,11 +1,14 @@
 'use client'
 
+// Stores and reads whether the user allowed usage analytics.
+
 import { useCallback, useSyncExternalStore } from 'react'
 
 const STORAGE_KEY = 'taxflow_analytics_consent'
 
 export type AnalyticsConsentValue = 'granted' | 'denied'
 
+// Reads the saved consent value from browser storage.
 function readConsent(): AnalyticsConsentValue | null {
   if (typeof window === 'undefined') return null
   const value = window.localStorage.getItem(STORAGE_KEY)
@@ -15,34 +18,41 @@ function readConsent(): AnalyticsConsentValue | null {
 
 const listeners = new Set<() => void>()
 
+// Registers a listener for consent changes.
 function subscribe(listener: () => void) {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
 
+// Notifies all listeners that consent changed.
 function emit() {
   listeners.forEach(l => l())
 }
 
+// Returns the current consent without using React.
 export function getAnalyticsConsent(): AnalyticsConsentValue | null {
   return readConsent()
 }
 
+// Saves consent and tells subscribers to refresh.
 export function setAnalyticsConsent(value: AnalyticsConsentValue) {
   window.localStorage.setItem(STORAGE_KEY, value)
   emit()
 }
 
+// React hook that re-renders when consent changes.
 export function useAnalyticsConsent(): AnalyticsConsentValue | null {
   return useSyncExternalStore(subscribe, readConsent, () => null)
 }
 
+// Bottom bar asking the user to accept or decline analytics.
 export function AnalyticsConsentBanner({
   onDecision,
 }: {
   onDecision: (value: AnalyticsConsentValue) => void
 }) {
   const consent = useAnalyticsConsent()
+  // Saves consent and notifies the parent provider.
   const decide = useCallback((value: AnalyticsConsentValue) => {
     setAnalyticsConsent(value)
     onDecision(value)

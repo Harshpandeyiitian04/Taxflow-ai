@@ -1,4 +1,4 @@
-// Updated types matching exact database schema
+// Type definitions that match the database tables and app data.
 
 export type Plan = 'trial' | 'starter' | 'professional' | 'firm'
 export type ClientStatus = 'pending' | 'received' | 'processing' | 'done' | 'filed'
@@ -13,7 +13,6 @@ export interface CAFirm {
   owner_name: string | null
   phone: string | null
   city: string | null
-  /** DB column retained; not used for gating during free early access. */
   plan?: Plan
   extractions_used?: number
   client_limit?: number

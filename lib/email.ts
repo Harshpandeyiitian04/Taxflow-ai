@@ -1,7 +1,7 @@
-// lib/email.ts — reusable email functions using Resend
-
 import { Resend } from 'resend'
 import { escapeHtml } from '@/lib/utils/escapeHtml'
+
+// Sends transactional emails to CAs and clients via Resend.
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 const FROM = process.env.RESEND_FROM_EMAIL?.trim() || null
@@ -9,6 +9,7 @@ const SUPPORT =
   process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'support@taxflowai.in'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || ''
 
+// Returns false when email is not configured so sends are skipped quietly.
 function canSendEmail(): boolean {
   if (!resend || !FROM) {
     console.warn(JSON.stringify({ code: 'email_skipped_missing_from_or_key' }))
@@ -17,17 +18,17 @@ function canSendEmail(): boolean {
   return true
 }
 
+// Makes a link safe to embed in HTML or falls back to the app home.
 function safeUrl(href: string): string {
   try {
     const u = new URL(href)
     if (u.protocol === 'https:' || u.protocol === 'http:') return escapeHtml(u.toString())
   } catch {
-    /* ignore */
   }
   return escapeHtml(APP_URL || '#')
 }
 
-// Email sent to CA when a client uploads documents
+// Emails the CA when a client uploads a document.
 export async function sendClientUploadNotification({
   caEmail,
   caName,
@@ -112,7 +113,7 @@ export async function sendClientUploadNotification({
   }
 }
 
-// Welcome email sent after first signup
+// Emails a new CA after they create an account.
 export async function sendWelcomeEmail(caEmail: string) {
   if (!canSendEmail()) return
 
@@ -152,6 +153,7 @@ export async function sendWelcomeEmail(caEmail: string) {
   }).catch(() => console.error(JSON.stringify({ code: 'welcome_email_failed' })))
 }
 
+// Sends a plain-text reminder from the CA to a client.
 export async function sendReminderEmail({
   to,
   clientName,

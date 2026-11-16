@@ -1,5 +1,7 @@
 'use client'
 
+// Form dialog to create a new client record.
+
 import { useEffect, useRef, useState } from 'react'
 import type { Client } from '@/types'
 import { defaultAssessmentYear, previousAssessmentYear } from '@/lib/dates'
@@ -11,6 +13,7 @@ interface AddClientModalProps {
   onCreated: (client: Client, uploadUrl: string) => void
 }
 
+// Modal with fields for name, PAN, phone, and assessment year.
 export function AddClientModal({ open, onClose, onCreated }: AddClientModalProps) {
   const defaultAy = defaultAssessmentYear()
   const prevAy = previousAssessmentYear()
@@ -28,6 +31,7 @@ export function AddClientModal({ open, onClose, onCreated }: AddClientModalProps
 
   if (!open) return null
 
+  // Creates the client via API and returns an upload link.
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) { setError('Name is required'); return }

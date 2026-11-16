@@ -1,5 +1,7 @@
+// Draft terms of use page for TaxFlow AI.
 import Link from 'next/link'
 
+// Renders the public draft terms of use content.
 export default function TermsPage() {
   const support = process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'support@taxflowai.in'
 

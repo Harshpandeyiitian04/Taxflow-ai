@@ -1,5 +1,7 @@
 'use client'
 
+// Main client list with search, board view, and bulk actions.
+
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { AddClientModal } from '@/components/clients/AddClientModal'
@@ -32,6 +34,7 @@ const STATUS_CONFIG: Record<ClientStatus, { label: string; bg: string; text: str
 
 const STATUS_ORDER: ClientStatus[] = ['pending', 'received', 'processing', 'done', 'filed']
 
+// Dashboard home with client table, filters, and modals.
 export function DashboardClient({
   initialClients,
   firm,
@@ -54,7 +57,6 @@ export function DashboardClient({
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // Stats
   const stats = useMemo(() => ({
     total: clients.length,
     pending: clients.filter(c => c.status === 'pending').length,
@@ -62,7 +64,6 @@ export function DashboardClient({
     filed: clients.filter(c => c.status === 'filed').length,
   }), [clients])
 
-  // Filter
   const filtered = useMemo(() => {
     return clients.filter(c => {
       const matchSearch = !search ||
@@ -83,12 +84,14 @@ export function DashboardClient({
     [clients]
   )
 
+  // Adds a new client to the list and opens the share-link modal.
   function handleClientCreated(client: Client, uploadUrl: string) {
     setClients(prev => [{ ...client, documents: [] }, ...prev])
     setShowAdd(false)
     setLinkModal({ name: client.name, url: uploadUrl, phone: client.phone ?? undefined })
   }
 
+  // Deletes the client chosen in the confirm dialog.
   async function confirmDelete() {
     if (!deleteTarget) return
     const clientId = deleteTarget.id
@@ -112,6 +115,7 @@ export function DashboardClient({
     }
   }
 
+  // Queues WhatsApp reminder emails for one client.
   async function scheduleReminders(clientId: string, sequence: string) {
     setSchedulingClientId(clientId)
     setBannerError('')
@@ -131,6 +135,7 @@ export function DashboardClient({
     }
   }
 
+  // Optimistically updates then syncs client status with the API.
   async function changeClientStatus(clientId: string, status: ClientStatus) {
     const previousClients = clients
     setBannerError('')
@@ -148,12 +153,14 @@ export function DashboardClient({
     }
   }
 
+  // Adds or removes one client from the bulk selection.
   function toggleClientSelection(clientId: string) {
     setSelectedClientIds(current => current.includes(clientId)
       ? current.filter(id => id !== clientId)
       : [...current, clientId])
   }
 
+  // Selects or clears all clients currently shown in the list.
   function toggleVisibleSelection() {
     const visibleIds = filtered.map(client => client.id)
     const allSelected = visibleIds.every(id => selectedClientIds.includes(id))
@@ -162,6 +169,7 @@ export function DashboardClient({
       : [...new Set([...current, ...visibleIds])])
   }
 
+  // Sets the same status on every selected client.
   async function updateSelectedStatus(status: ClientStatus) {
     const updates = await Promise.all(selectedClientIds.map(clientId =>
       fetch(`/api/clients/${clientId}`, {
@@ -182,6 +190,7 @@ export function DashboardClient({
     setSelectedClientIds([])
   }
 
+  // Builds a Winman CSV from selected clients with Form 16 data.
   async function exportSelectedClients() {
     const selected = clients.filter(client => selectedClientIds.includes(client.id))
     const rows: Array<{ name: string; pan: string | null; data: Record<string, unknown> }> = []
@@ -206,7 +215,6 @@ export function DashboardClient({
           rows.push({ name: client.name, pan: client.pan, data: doc.extracted_data })
         }
       } catch {
-        // Skip clients that fail to load
       }
     }
 
@@ -221,7 +229,6 @@ export function DashboardClient({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navbar */}
       <nav className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-20">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-2">
@@ -295,7 +302,6 @@ export function DashboardClient({
             <button type="button" onClick={() => setBannerError('')} className="text-red-500 hover:text-red-700 shrink-0" aria-label="Dismiss error">✕</button>
           </div>
         )}
-        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
             { label: 'Total clients', value: stats.total, onClick: () => setStatusFilter('all') },
@@ -311,7 +317,6 @@ export function DashboardClient({
           ))}
         </div>
 
-        {/* Toolbar */}
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
           <div className="relative flex-1">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -353,7 +358,6 @@ export function DashboardClient({
           </button>
         </div>
 
-        {/* Client status board and list */}
         {viewMode === 'board' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 items-start">
             {STATUS_ORDER.map(status => {
@@ -418,7 +422,6 @@ export function DashboardClient({
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
-              {/* Table header — desktop only */}
               <div className="hidden sm:grid grid-cols-[28px_1fr_120px_100px_auto] gap-4 px-5 py-2.5 bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
                 <input type="checkbox" aria-label="Select all visible clients"
                   checked={filtered.length > 0 && filtered.every(client => selectedClientIds.includes(client.id))}
@@ -440,7 +443,6 @@ export function DashboardClient({
                     <input type="checkbox" aria-label={`Select ${client.name}`}
                       checked={selectedClientIds.includes(client.id)}
                       onChange={() => toggleClientSelection(client.id)} />
-                    {/* Client info */}
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-linear-to-br from-blue-100 to-blue-200 flex items-center justify-center text-sm font-semibold text-blue-700 shrink-0">
                         {client.name.charAt(0).toUpperCase()}
@@ -462,15 +464,12 @@ export function DashboardClient({
                       </div>
                     </div>
 
-                    {/* AY */}
                     <span className="text-sm text-gray-500 hidden sm:block">{client.assessment_year ? `AY ${client.assessment_year}` : 'AY not set'}</span>
 
-                    {/* Status */}
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full w-fit ${cfg.bg} ${cfg.text}`}>
                       {cfg.label}
                     </span>
 
-                    {/* Actions */}
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {client.status === 'pending' && (
                         <button onClick={() => void scheduleReminders(client.id, 'document_request')}
@@ -555,7 +554,6 @@ export function DashboardClient({
           </div>
         )}
 
-        {/* Footer count */}
         {filtered.length > 0 && (
           <p className="text-xs text-gray-400 mt-3 text-right">
             Showing {filtered.length} of {clients.length} clients
@@ -563,7 +561,6 @@ export function DashboardClient({
         )}
       </main>
 
-      {/* Modals */}
       <AddClientModal
         open={showAdd}
         onClose={() => setShowAdd(false)}

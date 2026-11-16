@@ -1,3 +1,4 @@
+// Configures how unit tests are found and run.
 import { defineConfig } from 'vitest/config'
 import path from 'node:path'
 

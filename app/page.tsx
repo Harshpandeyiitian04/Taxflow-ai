@@ -1,5 +1,7 @@
+// Public marketing landing page for TaxFlow AI.
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { auth } from '@/lib/auth/server'
+import { sql } from '@/lib/db/sql'
 import { itrDeadlineCopy } from '@/lib/dates'
 
 const EXTRACTED_FIELDS = [
@@ -23,7 +25,7 @@ const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'support@
 const FAQ = [
   {
     q: 'Is my client data safe?',
-    a: 'Documents are stored privately in your Supabase project and shared only with the CA firm that owns the client. Files are processed by Google Gemini to extract data. See our draft Privacy notice for processors and retention.',
+    a: 'Documents are stored privately in Neon object storage and shared only with the CA firm that owns the client. Files are processed by Google Gemini to extract data. See our draft Privacy notice for processors and retention.',
   },
   {
     q: 'Which software does the CSV export work with?',
@@ -43,12 +45,15 @@ const FAQ = [
   },
 ]
 
+export const dynamic = 'force-dynamic'
+
+// Renders the home page using the visitor's login and firm status.
 export default async function HomePage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: firm } = user
-    ? await supabase.from('ca_firms').select('id').eq('user_id', user.id).maybeSingle()
-    : { data: null }
+  const { data: session } = await auth.getSession()
+  const user = session?.user ?? null
+  const firm = user
+    ? (await sql()`select id::text as id from public.ca_firms where user_id = ${user.id}::uuid limit 1`)[0] ?? null
+    : null
   const accountHref = firm ? '/dashboard' : user ? '/login?error=account-setup' : '/login?mode=signup'
   const itr = itrDeadlineCopy()
   const ctaHeadline = itr.passed
@@ -58,7 +63,6 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen bg-white">
 
-      {/* ── Navbar ─────────────────────────────────── */}
       <nav className="border-b border-gray-100 px-6 py-4 sticky top-0 bg-white/95 backdrop-blur-sm z-30">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <span className="text-lg font-bold text-gray-900">TaxFlow AI</span>
@@ -107,7 +111,6 @@ export default async function HomePage() {
         </div>
       </nav>
 
-      {/* ── Hero ──────────────────────────────────── */}
       <section className="px-6 py-20 text-center max-w-4xl mx-auto">
         <div className="inline-block bg-green-50 border border-green-200 text-green-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
           Built for Indian CA firms
@@ -134,7 +137,6 @@ export default async function HomePage() {
         <p className="text-sm text-gray-400 mt-3">No credit card · Setup in 2 minutes · Works with Winman, Computax, KDK</p>
       </section>
 
-      {/* ── Pain numbers ──────────────────────────── */}
       <section className="bg-gray-50 px-6 py-14">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
@@ -162,7 +164,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── Demo ──────────────────────────────────── */}
       {LOOM_DEMO_URL && <section id="demo" className="px-6 py-16 max-w-4xl mx-auto">
         <div className="text-center mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-3">Watch it work — 90 seconds</h2>
@@ -183,7 +184,6 @@ per Form 16` },
         </p>
       </section>}
 
-      {/* ── What gets extracted ───────────────────── */}
       <section className="bg-gray-50 px-6 py-16">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-10">
@@ -206,7 +206,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── How it works ──────────────────────────── */}
       <section className="px-6 py-16 max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <h2 className="text-3xl font-bold text-gray-900 mb-3">How it works</h2>
@@ -228,7 +227,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── Pricing ───────────────────────────────── */}
       <section id="pricing" className="bg-gray-50 px-6 py-16">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl font-bold text-gray-900 mb-3">Free during early access</h2>
@@ -240,7 +238,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── FAQ ───────────────────────────────────── */}
       <section id="faq" className="px-6 py-16 max-w-3xl mx-auto">
         <h2 className="text-3xl font-bold text-gray-900 text-center mb-10">Frequently asked questions</h2>
         <div className="space-y-4">
@@ -253,7 +250,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── Final CTA ─────────────────────────────── */}
       <section className="bg-green-600 px-6 py-16 text-center">
         <div className="max-w-2xl mx-auto">
           <h2 className="text-3xl font-bold text-white mb-4">
@@ -269,7 +265,6 @@ per Form 16` },
         </div>
       </section>
 
-      {/* ── Footer ────────────────────────────────── */}
       <footer className="border-t border-gray-100 px-6 py-8">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="font-bold text-gray-900">TaxFlow AI</span>

@@ -1,8 +1,31 @@
+// API to permanently delete a CA firm account and stored files.
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { auth as neonAuth } from '@/lib/auth/server'
+import { sql, withAdmin } from '@/lib/db/sql'
+import { getFirmStoragePaths } from '@/lib/db/queries'
+import { deleteDocumentObjects, listDocumentKeys } from '@/lib/storage/documents'
 import { requireFirm } from '@/lib/auth/requireFirm'
 import { logError } from '@/lib/logger'
 
+// Removes the login user after firm data has been deleted.
+async function deleteAuthUser(userId: string): Promise<boolean> {
+  try {
+    const { error } = await neonAuth.deleteUser({})
+    if (!error) return true
+  } catch {
+  }
+
+  try {
+    await withAdmin(txn => [
+      txn`delete from neon_auth."user" where id = ${userId}::uuid`,
+    ])
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Deletes firm data, storage, and auth when the user types DELETE.
 export async function POST(request: NextRequest) {
   const auth = await requireFirm()
   if (!auth.ok) return auth.response
@@ -22,41 +45,34 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const admin = createAdminClient()
-
   try {
-    // Remove storage objects under firm prefix
-    const { data: docs } = await admin
-      .from('documents')
-      .select('storage_path')
-      .eq('ca_firm_id', firm.id)
+    const recordedPaths = await getFirmStoragePaths(firm.id)
 
-    const paths = (docs ?? [])
-      .map(d => d.storage_path)
-      .filter((p): p is string => typeof p === 'string' && p.length > 0)
+    let orphanPaths: string[] = []
+    try {
+      orphanPaths = await listDocumentKeys({ firmId: firm.id })
+    } catch {
+      logError('account_delete_storage_list_failed', { firmId: firm.id })
+    }
 
+    const paths = [...new Set([...recordedPaths, ...orphanPaths])]
     if (paths.length > 0) {
-      const { error: storageError } = await admin.storage.from('documents').remove(paths)
-      if (storageError) {
+      try {
+        await deleteDocumentObjects({ firmId: firm.id, keys: paths })
+      } catch {
         logError('account_delete_storage_failed', { firmId: firm.id, count: paths.length })
       }
     }
 
-    // Also try listing firm folder for orphans
-    const { data: listed } = await admin.storage.from('documents').list(firm.id, { limit: 1000 })
-    if (listed?.length) {
-      const folderPaths = listed.map(f => `${firm.id}/${f.name}`)
-      await admin.storage.from('documents').remove(folderPaths)
-    }
-
-    const { error: firmError } = await admin.from('ca_firms').delete().eq('id', firm.id)
-    if (firmError) {
+    try {
+      await sql()`delete from public.ca_firms where id = ${firm.id}::uuid`
+    } catch {
       logError('account_delete_firm_failed', { firmId: firm.id })
       return NextResponse.json({ error: 'Could not delete firm data' }, { status: 500 })
     }
 
-    const { error: authError } = await admin.auth.admin.deleteUser(user.id)
-    if (authError) {
+    const authDeleted = await deleteAuthUser(user.id)
+    if (!authDeleted) {
       logError('account_delete_auth_failed', { userId: user.id })
       return NextResponse.json({ error: 'Firm data removed but auth user deletion failed. Contact support.' }, { status: 500 })
     }

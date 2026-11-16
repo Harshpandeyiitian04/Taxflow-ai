@@ -1,4 +1,6 @@
-/** Mask an email for referral history: a***@domain.com */
+// Hides part of an email address for privacy on screen.
+
+// Shows only the first letter of the name part before the @ sign.
 export function maskEmail(email: string): string {
   const trimmed = email.trim()
   const at = trimmed.indexOf('@')

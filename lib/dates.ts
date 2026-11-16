@@ -1,5 +1,6 @@
-/** Assessment year helpers using Asia/Kolkata calendar rules. */
+// Indian tax calendar helpers for assessment years and ITR due dates.
 
+// Splits a date into year, month, and day in India time.
 function kolkataParts(now: Date = new Date()): { year: number; month: number; day: number } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
@@ -14,12 +15,7 @@ function kolkataParts(now: Date = new Date()): { year: number; month: number; da
   return { year, month, day }
 }
 
-/**
- * Default assessment year for "now" in IST.
- * From Apr 1 Y through Mar 31 Y+1, default is `Y-(Y+1)%100`
- * (Y = calendar year of that April 1).
- * Example: Nov 2026 → 2026-27; Jan 2027 → 2026-27; Apr 2027 → 2027-28.
- */
+// Returns the default assessment year label for today in India.
 export function defaultAssessmentYear(now: Date = new Date()): string {
   const { year, month } = kolkataParts(now)
   const ayStartYear = month >= 4 ? year : year - 1
@@ -27,13 +23,14 @@ export function defaultAssessmentYear(now: Date = new Date()): string {
   return `${ayStartYear}-${ayEnd}`
 }
 
+// Returns the assessment year before the current one.
 export function previousAssessmentYear(now: Date = new Date()): string {
   const current = defaultAssessmentYear(now)
   const start = Number(current.slice(0, 4)) - 1
   return `${start}-${String((start + 1) % 100).padStart(2, '0')}`
 }
 
-/** July 31 of the AY start year (original individual ITR due date copy). */
+// Builds user-facing text about the July 31 ITR due date for the current AY.
 export function itrDeadlineCopy(now: Date = new Date()): {
   dueLabel: string
   dueYear: number

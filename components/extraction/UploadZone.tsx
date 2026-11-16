@@ -1,5 +1,7 @@
 'use client'
 
+// Drag-and-drop area to pick a document file for upload.
+
 import { useId, useRef, useState } from 'react'
 import { MAX_UPLOAD_MB } from '@/lib/constants'
 
@@ -9,6 +11,7 @@ interface UploadZoneProps {
   accept?: string
 }
 
+// File picker with size and type checks before upload.
 export function UploadZone({
   onFileSelect,
   isLoading,
@@ -21,6 +24,7 @@ export function UploadZone({
 
   const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
 
+  // Returns an error message if the file is not allowed.
   function validateFile(file: File): string | null {
     if (!ALLOWED_TYPES.includes(file.type)) {
       return 'Only PDF, JPEG, PNG, and WebP files are supported.'
@@ -31,6 +35,7 @@ export function UploadZone({
     return null
   }
 
+  // Validates then passes an acceptable file to the parent.
   function handleFile(file: File) {
     const err = validateFile(file)
     if (err) { setError(err); return }
@@ -38,6 +43,7 @@ export function UploadZone({
     onFileSelect(file)
   }
 
+  // Handles a file dropped onto the zone.
   function onDrop(e: React.DragEvent<HTMLLabelElement>) {
     e.preventDefault()
     setIsDragging(false)
@@ -46,13 +52,16 @@ export function UploadZone({
     if (file) handleFile(file)
   }
 
+  // Highlights the zone while a file is dragged over it.
   function onDragOver(e: React.DragEvent<HTMLLabelElement>) {
     e.preventDefault()
     if (!isLoading) setIsDragging(true)
   }
 
+  // Clears drag highlight when the pointer leaves the zone.
   function onDragLeave() { setIsDragging(false) }
 
+  // Handles a file chosen with the hidden file input.
   const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) handleFile(file)

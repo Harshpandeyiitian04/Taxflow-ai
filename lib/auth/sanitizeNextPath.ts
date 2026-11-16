@@ -1,4 +1,6 @@
-/** Same-origin relative redirects only; reject open-redirect tricks. */
+// Cleans redirect paths so users only go to safe pages on this site.
+
+// Returns a safe internal path or falls back to the dashboard.
 export function sanitizeNextPath(requestedNext: string, origin: string): string {
   const fallback = '/dashboard'
   if (!requestedNext.startsWith('/') || requestedNext.startsWith('//')) return fallback

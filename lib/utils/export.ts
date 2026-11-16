@@ -1,5 +1,8 @@
 import { csvSafeRow } from '@/lib/utils/csvSafe'
 
+// Downloads extracted document data as CSV files in the browser.
+
+// Builds and downloads a Form 16 field-by-field CSV for one client.
 export function generateForm16CSV(data: Record<string, unknown>, filename: string): void {
   const e = (data?.employer ?? {}) as Record<string, unknown>
   const emp = (data?.employee ?? {}) as Record<string, unknown>
@@ -98,9 +101,11 @@ export function generateForm16CSV(data: Record<string, unknown>, filename: strin
   URL.revokeObjectURL(url)
 }
 
+// Flattens any extraction object into rows and downloads a generic CSV.
 export function generateExtractionCSV(data: Record<string, unknown>, filename: string): void {
   const rows: string[][] = [['Field', 'Value']]
 
+  // Walks nested JSON and adds one CSV row per field.
   function visit(value: unknown, path: string) {
     if (Array.isArray(value)) {
       if (value.length === 0) rows.push([path, ''])

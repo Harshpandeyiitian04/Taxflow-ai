@@ -1,8 +1,8 @@
+// API to schedule and list client document or GST reminders.
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { sql } from '@/lib/db/sql'
 import { requireFirm } from '@/lib/auth/requireFirm'
-import { getOrCreateUploadToken } from '@/lib/supabase/queries'
+import { getOrCreateUploadToken, isUuid } from '@/lib/db/queries'
 
 interface ScheduledReminder {
   type: string
@@ -10,6 +10,7 @@ interface ScheduledReminder {
   scheduled_at: string
 }
 
+// Creates a reminder sequence for one client.
 export async function POST(request: NextRequest) {
   const auth = await requireFirm()
   if (!auth.ok) return auth.response
@@ -20,13 +21,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid reminder sequence' }, { status: 400 })
   }
 
-  const admin = createAdminClient()
-  const { data: client } = await admin
-    .from('clients')
-    .select('name, phone, email, gstin, gst_scheme')
-    .eq('id', clientId)
-    .eq('ca_firm_id', firm.id)
-    .single()
+  if (!isUuid(clientId)) {
+    return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+  }
+
+  const query = sql()
+  const clientRows = await query`
+    select name, phone, email, gstin, gst_scheme
+      from public.clients
+     where id = ${clientId}::uuid
+       and ca_firm_id = ${firm.id}::uuid
+     limit 1
+  `
+  const client = clientRows[0] as
+    | {
+        name: string
+        phone: string | null
+        email: string | null
+        gstin: string | null
+        gst_scheme: string | null
+      }
+    | undefined
 
   if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
   if (!client.phone && !client.email) {
@@ -86,49 +101,63 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No future reminders to schedule' }, { status: 400 })
   }
 
-  const { data: existing } = await admin
-    .from('reminders')
-    .select('id')
-    .eq('client_id', clientId)
-    .eq('ca_firm_id', firm.id)
-    .eq('type', sequence)
-    .eq('status', 'pending')
-    .limit(1)
+  const existing = await query`
+    select id
+      from public.reminders
+     where client_id = ${clientId}::uuid
+       and ca_firm_id = ${firm.id}::uuid
+       and type = ${sequence}
+       and status = 'pending'
+     limit 1
+  `
 
-  if (existing?.length) {
+  if (existing.length) {
     return NextResponse.json({ error: 'This reminder sequence is already scheduled' }, { status: 409 })
   }
 
-  const { error } = await admin
-    .from('reminders')
-    .insert(remindersToCreate.map(r => ({
-      ...r,
-      client_id: clientId,
-      ca_firm_id: firm.id,
-    })))
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  try {
+    await query`
+      insert into public.reminders (client_id, ca_firm_id, type, message, scheduled_at)
+      select ${clientId}::uuid, ${firm.id}::uuid, r.type, r.message, r.scheduled_at
+        from jsonb_to_recordset(${JSON.stringify(remindersToCreate)}::jsonb)
+          as r(type text, message text, scheduled_at timestamptz)
+    `
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Failed to schedule reminders' },
+      { status: 500 }
+    )
+  }
 
   return NextResponse.json({ scheduled: remindersToCreate.length })
 }
 
+// Lists reminders for the firm, optionally filtered by client.
 export async function GET(request: NextRequest) {
   const auth = await requireFirm()
   if (!auth.ok) return auth.response
   const { firm } = auth
 
   const clientId = request.nextUrl.searchParams.get('clientId')
-  const supabase = await createClient()
+  if (clientId && !isUuid(clientId)) {
+    return NextResponse.json({ reminders: [] })
+  }
 
-  const query = supabase
-    .from('reminders')
-    .select('*')
-    .eq('ca_firm_id', firm.id)
-    .order('scheduled_at', { ascending: true })
-
-  if (clientId) query.eq('client_id', clientId)
-
-  const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ reminders: data })
+  try {
+    const rows = await sql()`
+      select to_jsonb(r) as row
+        from public.reminders r
+       where r.ca_firm_id = ${firm.id}::uuid
+         and (${clientId}::uuid is null or r.client_id = ${clientId}::uuid)
+       order by r.scheduled_at asc
+    `
+    return NextResponse.json({
+      reminders: (rows as { row: unknown }[]).map(r => r.row),
+    })
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Failed to load reminders' },
+      { status: 500 }
+    )
+  }
 }
